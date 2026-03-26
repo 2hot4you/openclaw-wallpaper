@@ -1,0 +1,74 @@
+use std::process::Command;
+
+/// Default Gateway HTTP port.
+const DEFAULT_PORT: u16 = 18789;
+
+// ─── IPC Commands ───────────────────────────────────────────
+
+/// Check whether the OpenClaw Gateway is reachable.
+///
+/// Strategy:
+///   1. Try HTTP GET `http://127.0.0.1:<port>/health`
+///   2. Fallback: run `openclaw gateway status` and inspect stdout
+#[tauri::command]
+pub async fn check_openclaw_status() -> Result<bool, String> {
+    let url = format!("http://127.0.0.1:{}/health", DEFAULT_PORT);
+
+    // Attempt 1: HTTP health endpoint (most reliable)
+    match reqwest::get(&url).await {
+        Ok(resp) if resp.status().is_success() => return Ok(true),
+        _ => {}
+    }
+
+    // Attempt 2: CLI fallback
+    match Command::new("openclaw")
+        .args(["gateway", "status"])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.contains("running") || stdout.contains("live") {
+                return Ok(true);
+            }
+        }
+        _ => {}
+    }
+
+    Ok(false)
+}
+
+/// Start the OpenClaw Gateway via CLI.
+#[tauri::command]
+pub async fn start_openclaw() -> Result<(), String> {
+    Command::new("openclaw")
+        .args(["gateway", "start"])
+        .spawn()
+        .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
+    Ok(())
+}
+
+/// Stop the OpenClaw Gateway via CLI.
+#[tauri::command]
+pub async fn stop_openclaw() -> Result<(), String> {
+    Command::new("openclaw")
+        .args(["gateway", "stop"])
+        .output()
+        .map_err(|e| format!("Failed to stop OpenClaw Gateway: {}", e))?;
+    Ok(())
+}
+
+/// Restart the OpenClaw Gateway via CLI.
+#[tauri::command]
+pub async fn restart_openclaw() -> Result<(), String> {
+    Command::new("openclaw")
+        .args(["gateway", "restart"])
+        .output()
+        .map_err(|e| format!("Failed to restart OpenClaw Gateway: {}", e))?;
+    Ok(())
+}
+
+/// Return the Gateway WebSocket URL (always local for now).
+#[tauri::command]
+pub async fn get_gateway_url() -> Result<String, String> {
+    Ok(format!("ws://127.0.0.1:{}", DEFAULT_PORT))
+}
