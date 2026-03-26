@@ -72,3 +72,10 @@ pub async fn restart_openclaw() -> Result<(), String> {
 pub async fn get_gateway_url() -> Result<String, String> {
     Ok(format!("ws://127.0.0.1:{}", DEFAULT_PORT))
 }
+
+/// Update tray status from frontend.
+#[tauri::command]
+pub async fn update_tray_status(app: tauri::AppHandle, is_online: bool) -> Result<(), String> {
+    crate::tray::update_tray_status(&app, is_online);
+    Ok(())
+}

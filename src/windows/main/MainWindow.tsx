@@ -1,33 +1,32 @@
-import React, { useEffect, useRef, useState } from "react";
-import type { SessionData } from "../../gateway/types";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useGatewayStore } from "../../stores/gatewayStore";
+import { useAppStore } from "../../stores/appStore";
+import {
+  checkOpenClawStatus,
+  getGatewayUrl,
+  startOpenClaw,
+  stopOpenClaw,
+  updateTrayStatus,
+} from "../../utils/tauri-ipc";
+import { AgentInfoPanelWithPosition, setInfoPanelPosition } from "./AgentInfoPanel";
+import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load SceneManager to isolate PixiJS init
 let SceneManagerModule: typeof import("../../pixi/engine/SceneManager") | null = null;
 
-/** Mock session data: 3 agents in different states */
-const MOCK_SESSIONS: SessionData[] = [
-  {
-    key: "agent-pm-001",
-    label: "PM",
-    kind: "session",
-    status: "idle",
-    agentId: "pm",
-  },
-  {
-    key: "agent-frontend-002",
-    label: "Frontend",
-    kind: "session",
-    status: "active", // maps to "working"
-    agentId: "frontend",
-  },
-  {
-    key: "agent-backend-003",
-    label: "Backend",
-    kind: "session",
-    status: "error",
-    agentId: "backend",
-  },
-];
+/** Tauri event listener type — simplified to avoid needing full @tauri-apps/api/event import */
+type UnlistenFn = () => void;
+
+/** Gateway status check interval (15 seconds) */
+const STATUS_CHECK_INTERVAL = 15_000;
+
+/** Connection status display strings */
+const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
+  connected: "🟢 Connected to Gateway",
+  disconnected: "🔴 Gateway Disconnected",
+  connecting: "🟡 Connecting...",
+  reconnecting: "🟡 Reconnecting...",
+};
 
 export const MainWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +34,32 @@ export const MainWindow: React.FC = () => {
   const [status, setStatus] = useState<string>("Starting...");
   const [error, setError] = useState<string | null>(null);
   const [pixiReady, setPixiReady] = useState(false);
+
+  // Gateway store
+  const connect = useGatewayStore((s) => s.connect);
+  const disconnect = useGatewayStore((s) => s.disconnect);
+  const connectionStatus = useGatewayStore((s) => s.connectionStatus);
+  const sessions = useGatewayStore((s) => s.sessions);
+  const refreshSessions = useGatewayStore((s) => s.refreshSessions);
+
+  // App store
+  const setOpenclawOnline = useAppStore((s) => s.setOpenclawOnline);
+  const setSelectedCharacterId = useAppStore((s) => s.setSelectedCharacterId);
+
+  // Track connection status for scene sync
+  const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
+  connectionStatusRef.current = connectionStatus;
+
+  // Handle character click from PixiJS
+  const handleCharacterClick = useCallback(
+    (id: string, globalX: number, globalY: number) => {
+      setInfoPanelPosition(globalX, globalY);
+      setSelectedCharacterId(id);
+    },
+    [setSelectedCharacterId],
+  );
+
+  // ─── PixiJS Initialization ──────────────────────────
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -44,7 +69,6 @@ export const MainWindow: React.FC = () => {
     async function initPixi() {
       try {
         setStatus("Loading PixiJS module...");
-        // Dynamic import to catch module-level errors
         SceneManagerModule = await import("../../pixi/engine/SceneManager");
         if (cancelled) return;
 
@@ -56,18 +80,17 @@ export const MainWindow: React.FC = () => {
         await sm.init(containerRef.current!);
         if (cancelled) return;
 
-        setStatus("Loading Workshop Scene...");
-        // Sync mock session data to character manager
-        const charManager = sm.getCharacterManager();
-        if (charManager) {
-          charManager.syncWithSessions(MOCK_SESSIONS);
-        }
+        // Register character click handler
+        sm.onCharacterClick(handleCharacterClick);
+
+        // Start in offline mode until Gateway connects
+        sm.setOnlineMode(false);
+        sm.setStatusText("🦞 OpenClaw Wallpaper");
 
         setStatus("Running");
         setPixiReady(true);
       } catch (err) {
         if (cancelled) return;
-        console.error("PixiJS init failed:", err);
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
       }
@@ -82,7 +105,168 @@ export const MainWindow: React.FC = () => {
         sceneManagerRef.current = null;
       }
     };
-  }, []);
+  }, [handleCharacterClick]);
+
+  // ─── Gateway Connection ─────────────────────────────
+
+  useEffect(() => {
+    if (!pixiReady) return;
+
+    let cancelled = false;
+    let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+    async function connectToGateway() {
+      try {
+        const online = await checkOpenClawStatus();
+        if (cancelled) return;
+
+        if (online) {
+          const url = await getGatewayUrl();
+          if (cancelled) return;
+          await connect(url);
+        }
+      } catch {
+        // Gateway not available — stay in offline mode
+      }
+    }
+
+    // Initial connection attempt
+    connectToGateway();
+
+    // Periodic status check (reconnect if disconnected)
+    statusCheckTimer = setInterval(async () => {
+      if (cancelled) return;
+
+      const currentStatus = connectionStatusRef.current;
+      if (currentStatus === "disconnected") {
+        try {
+          const online = await checkOpenClawStatus();
+          if (online && !cancelled) {
+            const url = await getGatewayUrl();
+            if (!cancelled) {
+              await connect(url);
+            }
+          }
+        } catch {
+          // Ignore — will retry next interval
+        }
+      }
+    }, STATUS_CHECK_INTERVAL);
+
+    return () => {
+      cancelled = true;
+      if (statusCheckTimer) clearInterval(statusCheckTimer);
+      disconnect();
+    };
+  }, [pixiReady, connect, disconnect]);
+
+  // ─── Tray Events ────────────────────────────────────
+
+  useEffect(() => {
+    const unlisteners: UnlistenFn[] = [];
+
+    async function setupTrayListeners() {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+
+        const u1 = await listen("tray-refresh-status", async () => {
+          try {
+            const online = await checkOpenClawStatus();
+            if (online && connectionStatusRef.current === "disconnected") {
+              const url = await getGatewayUrl();
+              await connect(url);
+            } else if (connectionStatusRef.current === "connected") {
+              await refreshSessions();
+            }
+          } catch {
+            // Ignore
+          }
+        });
+        unlisteners.push(u1);
+
+        const u2 = await listen("tray-start-openclaw", async () => {
+          try {
+            await startOpenClaw();
+            // Wait a moment for Gateway to start, then try connecting
+            setTimeout(async () => {
+              try {
+                const online = await checkOpenClawStatus();
+                if (online) {
+                  const url = await getGatewayUrl();
+                  await connect(url);
+                }
+              } catch {
+                // Ignore
+              }
+            }, 3000);
+          } catch {
+            // Ignore
+          }
+        });
+        unlisteners.push(u2);
+
+        const u3 = await listen("tray-stop-openclaw", async () => {
+          try {
+            await stopOpenClaw();
+            disconnect();
+          } catch {
+            // Ignore
+          }
+        });
+        unlisteners.push(u3);
+      } catch {
+        // Tauri event system not available (e.g. in browser)
+      }
+    }
+
+    setupTrayListeners();
+
+    return () => {
+      for (const unlisten of unlisteners) {
+        unlisten();
+      }
+    };
+  }, [connect, disconnect, refreshSessions]);
+
+  // ─── Sync connection status → scene + tray ──────────
+
+  useEffect(() => {
+    const sm = sceneManagerRef.current;
+    if (!sm) return;
+
+    const isOnline = connectionStatus === "connected";
+    sm.setOnlineMode(isOnline);
+    setOpenclawOnline(isOnline);
+
+    // Update UI overlay
+    const scene = sm.getScene();
+    if (scene) {
+      const uiOverlay = scene.getUIOverlayLayer();
+      uiOverlay.setConnectionStatus(connectionStatus);
+    }
+
+    // Update status text
+    if (isOnline) {
+      sm.setStatusText("🦞 OpenClaw Wallpaper");
+    } else {
+      sm.setStatusText(`🦞 OpenClaw Wallpaper — ${CONNECTION_LABELS[connectionStatus]}`);
+    }
+
+    // Update tray status (fire and forget)
+    updateTrayStatus(isOnline).catch(() => {});
+  }, [connectionStatus, setOpenclawOnline]);
+
+  // ─── Sync sessions → characters ─────────────────────
+
+  useEffect(() => {
+    const sm = sceneManagerRef.current;
+    if (!sm) return;
+
+    const charManager = sm.getCharacterManager();
+    if (charManager) {
+      charManager.syncWithSessions(sessions);
+    }
+  }, [sessions]);
 
   return (
     <div
@@ -122,6 +306,9 @@ export const MainWindow: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Agent Info Panel (floating, appears on character click) */}
+      {pixiReady && <AgentInfoPanelWithPosition />}
     </div>
   );
 };

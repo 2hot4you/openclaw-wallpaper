@@ -2,6 +2,7 @@ import { Application } from "pixi.js";
 import { WorkshopScene } from "../scenes/WorkshopScene";
 import { PerformanceController, PerformanceMode } from "./PerformanceController";
 import { AgentCharacterManager } from "../characters/AgentCharacterManager";
+import type { CharacterClickHandler } from "../characters/AgentCharacter";
 
 export class SceneManager {
   private app: Application | null = null;
@@ -38,6 +39,9 @@ export class SceneManager {
     await this.scene.init();
     this.app.stage.addChild(this.scene.container);
 
+    // Enable stage-level interactivity for click events to propagate
+    this.app.stage.eventMode = "passive";
+
     // Initialize performance controller
     this.performanceController = new PerformanceController(this.app.ticker);
 
@@ -73,6 +77,35 @@ export class SceneManager {
    */
   getCharacterManager(): AgentCharacterManager | null {
     return this.scene?.getCharacterManager() ?? null;
+  }
+
+  /**
+   * Get the underlying WorkshopScene for direct control (offline mode, etc).
+   */
+  getScene(): WorkshopScene | null {
+    return this.scene;
+  }
+
+  /**
+   * Register a callback for character click events.
+   * The callback receives (characterId, globalX, globalY).
+   */
+  onCharacterClick(handler: CharacterClickHandler | null): void {
+    this.scene?.getCharacterManager().onCharacterClick(handler);
+  }
+
+  /**
+   * Set online/offline mode on the scene.
+   */
+  setOnlineMode(online: boolean): void {
+    this.scene?.setOnlineMode(online);
+  }
+
+  /**
+   * Update the status text in the UI overlay.
+   */
+  setStatusText(text: string): void {
+    this.scene?.getUIOverlayLayer().setStatus(text);
   }
 
   /**

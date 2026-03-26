@@ -7,10 +7,11 @@
  * - Changed status → update animation
  *
  * Positions characters: working agents near workshop, idle near rest area.
+ * Supports character click events for info panel display.
  */
 
 import { Container } from "pixi.js";
-import { AgentCharacter } from "./AgentCharacter";
+import { AgentCharacter, CharacterClickHandler } from "./AgentCharacter";
 import { getPalette } from "./PaletteSwap";
 import type { SessionData } from "../../gateway/types";
 
@@ -28,10 +29,14 @@ export class AgentCharacterManager {
   private nextIndex = 0;
   private sceneWidth = 800;
   private sceneHeight = 600;
+  private _onCharacterClick: CharacterClickHandler | null = null;
 
   constructor() {
     this.container = new Container();
     this.container.label = "character-layer";
+
+    // Enable interactivity on the container
+    this.container.eventMode = "passive";
   }
 
   /**
@@ -41,6 +46,17 @@ export class AgentCharacterManager {
     this.sceneWidth = w;
     this.sceneHeight = h;
     this.repositionAll();
+  }
+
+  /**
+   * Register a callback for character click events.
+   */
+  onCharacterClick(handler: CharacterClickHandler | null): void {
+    this._onCharacterClick = handler;
+    // Update all existing characters
+    for (const character of this.characters.values()) {
+      character.onClick = handler;
+    }
   }
 
   /**
@@ -64,6 +80,7 @@ export class AgentCharacterManager {
         // New character
         const palette = getPalette(this.nextIndex);
         character = new AgentCharacter(session.key, session.label ?? session.key, palette);
+        character.onClick = this._onCharacterClick;
         this.nextIndex++;
         this.characters.set(session.key, character);
         this.container.addChild(character.container);

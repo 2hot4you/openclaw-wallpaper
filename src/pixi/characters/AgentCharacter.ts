@@ -5,6 +5,7 @@
  * Name text above head with pixel-style font.
  * Status emoji icon above name.
  * 5 animation states driven by AnimationStateMachine.
+ * Interactive: click to show info panel.
  */
 
 import { Container, Graphics, Text, TextStyle } from "pixi.js";
@@ -28,6 +29,8 @@ const STATUS_ICONS: Record<string, string> = {
   despawn: "",
 };
 
+export type CharacterClickHandler = (id: string, globalX: number, globalY: number) => void;
+
 export class AgentCharacter {
   public readonly container: Container;
   public readonly id: string;
@@ -39,6 +42,12 @@ export class AgentCharacter {
   private statusText: Text;
   private palette: CharacterPalette;
   private stateMachine: AnimationStateMachine;
+
+  /** Click handler callback */
+  private _onClick: CharacterClickHandler | null = null;
+
+  /** Hit area for click detection */
+  private hitArea: Graphics;
 
   /** Track if character has been fully despawned */
   private _isDespawned = false;
@@ -86,9 +95,19 @@ export class AgentCharacter {
     this.statusText.y = -BODY_H - HEAD_RADIUS * 2 - 18;
     this.container.addChild(this.statusText);
 
-    // Pivot at feet
-    // The body is drawn centered at x, with bottom at y=0
-    // So the character's anchor is at the feet
+    // Invisible hit area covering full character for click detection
+    this.hitArea = new Graphics();
+    this.hitArea.rect(-BODY_W / 2 - 4, -BODY_H - HEAD_RADIUS * 2 - 24, BODY_W + 8, BODY_H + HEAD_RADIUS * 2 + 28);
+    this.hitArea.fill({ color: 0x000000, alpha: 0.001 }); // nearly invisible
+    this.hitArea.eventMode = "static";
+    this.hitArea.cursor = "pointer";
+    this.hitArea.on("pointertap", (event) => {
+      if (this._onClick) {
+        const global = event.global;
+        this._onClick(this.id, global.x, global.y);
+      }
+    });
+    this.container.addChild(this.hitArea);
 
     // State machine
     this.stateMachine = new AnimationStateMachine("spawn");
@@ -101,6 +120,13 @@ export class AgentCharacter {
 
   get currentState(): AnimationState {
     return this.stateMachine.currentState;
+  }
+
+  /**
+   * Set click handler for this character.
+   */
+  set onClick(handler: CharacterClickHandler | null) {
+    this._onClick = handler;
   }
 
   private drawBody(): void {
