@@ -43,6 +43,7 @@ export class AgentSprite {
   private _facing: Direction = "down";
   private _isMoving = false;
   private _isDespawned = false;
+  private _isDespawning = false;
   private moveTimeline: Phaser.Tweens.Tween | null = null;
   private clickHandler: CharacterClickHandler | null = null;
   private currentEmoteKey: string | null = null;
@@ -57,6 +58,8 @@ export class AgentSprite {
     spriteKey: string,
     x: number,
     y: number,
+    /** If true, spawn fully visible immediately (used for entrance walk-in) */
+    spawnVisible = false,
   ) {
     this.scene = scene;
     this.id = id;
@@ -105,29 +108,39 @@ export class AgentSprite {
     }
 
     // ── Spawn animation ─────────────────────────────
-    this.sprite.setScale(0);
-    this.sprite.setAlpha(0);
-    this.nameTag.setAlpha(0);
+    if (spawnVisible) {
+      // Spawn immediately visible (subagent at entrance, will walk in)
+      this.sprite.setScale(1);
+      this.sprite.setAlpha(1);
+      this.nameTag.setAlpha(1);
+      this.spawnComplete = true;
+      this.playIdleAnim();
+    } else {
+      // Pop-in spawn animation (boss / default)
+      this.sprite.setScale(0);
+      this.sprite.setAlpha(0);
+      this.nameTag.setAlpha(0);
 
-    scene.tweens.add({
-      targets: [this.sprite],
-      scaleX: 1,
-      scaleY: 1,
-      alpha: 1,
-      duration: 400,
-      ease: "Back.easeOut",
-      onComplete: () => {
-        this.spawnComplete = true;
-        this.playIdleAnim();
-      },
-    });
+      scene.tweens.add({
+        targets: [this.sprite],
+        scaleX: 1,
+        scaleY: 1,
+        alpha: 1,
+        duration: 400,
+        ease: "Back.easeOut",
+        onComplete: () => {
+          this.spawnComplete = true;
+          this.playIdleAnim();
+        },
+      });
 
-    scene.tweens.add({
-      targets: [this.nameTag],
-      alpha: 1,
-      duration: 400,
-      delay: 200,
-    });
+      scene.tweens.add({
+        targets: [this.nameTag],
+        alpha: 1,
+        duration: 400,
+        delay: 200,
+      });
+    }
   }
 
   get status(): AgentStatus {
@@ -153,7 +166,7 @@ export class AgentSprite {
    * Set the agent's status and update emote + animation.
    */
   setStatus(status: AgentStatus): void {
-    if (this._status === status) return;
+    if (this._status === status || this._isDespawning) return;
     const prev = this._status;
     this._status = status;
 
@@ -225,7 +238,7 @@ export class AgentSprite {
   }
 
   /**
-   * Despawn with fade-out animation.
+   * Despawn with fade-out animation (immediate, no walk).
    */
   despawn(): void {
     if (this._isDespawned) return;
@@ -247,6 +260,27 @@ export class AgentSprite {
         this.destroy();
       },
     });
+  }
+
+  /**
+   * Walk to a target position, then fade out and despawn.
+   * Used for subagents leaving through the exit.
+   */
+  walkThenDespawn(targetX: number, targetY: number): void {
+    if (this._isDespawned) return;
+    // Mark as despawning to prevent further status updates
+    this._isDespawning = true;
+    this.hideEmote();
+    this.stopWorkBob();
+    this.stopErrorFlash();
+
+    this.moveTo(targetX, targetY, () => {
+      this.despawn();
+    });
+  }
+
+  get isDespawning(): boolean {
+    return this._isDespawning;
   }
 
   /**
