@@ -284,14 +284,6 @@ export const MainWindow: React.FC = () => {
 
   // ─── Mock sessions for offline/demo mode ─────────────
 
-  const MOCK_SESSIONS: import("../../gateway/types").SessionData[] = [
-    { key: "mock-pm", label: "PM", status: "idle", agentId: "pm" },
-    { key: "mock-frontend", label: "Frontend", status: "active", agentId: "frontend" },
-    { key: "mock-backend", label: "Backend", status: "active", agentId: "backend" },
-    { key: "mock-qa", label: "QA", status: "error", agentId: "qa" },
-    { key: "mock-devops", label: "DevOps", status: "idle", agentId: "devops" },
-  ];
-
   // ─── Sync sessions → characters ─────────────────────
 
   useEffect(() => {
@@ -300,11 +292,8 @@ export const MainWindow: React.FC = () => {
 
     const charManager = sm.getCharacterManager();
     if (charManager) {
-      // Use real sessions when connected, mock when disconnected
-      const data = connectionStatus === "connected" && sessions.length > 0
-        ? sessions
-        : MOCK_SESSIONS;
-      charManager.syncWithSessions(data);
+      console.log("[Wallpaper] Syncing characters with sessions:", sessions.length, "sessions");
+      charManager.syncWithSessions(sessions);
     }
   }, [sessions, connectionStatus, pixiReady]);
 
