@@ -1,2 +1,2 @@
 export { MainWindow } from "./MainWindow";
-export { AgentInfoPanel, AgentInfoPanelWithPosition } from "./AgentInfoPanel";
+// AgentInfoPanel is deprecated — info bubble is now rendered by Phaser (InfoBubble.ts)

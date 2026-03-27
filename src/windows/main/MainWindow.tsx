@@ -9,7 +9,6 @@ import {
   stopOpenClaw,
   updateTrayStatus,
 } from "../../utils/tauri-ipc";
-import { AgentInfoPanelWithPosition, setInfoPanelPosition, setSeatIndexLookup, setWorldToScreenFn } from "./AgentInfoPanel";
 import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load GameManager to isolate Phaser init
@@ -41,6 +40,7 @@ export const MainWindow: React.FC = () => {
   const disconnect = useGatewayStore((s) => s.disconnect);
   const connectionStatus = useGatewayStore((s) => s.connectionStatus);
   const sessions = useGatewayStore((s) => s.sessions);
+  const agents = useGatewayStore((s) => s.agents);
   const refreshSessions = useGatewayStore((s) => s.refreshSessions);
 
   // App store
@@ -51,10 +51,9 @@ export const MainWindow: React.FC = () => {
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
   connectionStatusRef.current = connectionStatus;
 
-  // Handle character click from Phaser
+  // Handle character click from Phaser (info bubble is now handled internally by AgentManager)
   const handleCharacterClick = useCallback(
-    (id: string, screenX: number, screenY: number, worldX: number, worldY: number) => {
-      setInfoPanelPosition(screenX, screenY, worldX, worldY);
+    (id: string, _screenX: number, _screenY: number, _worldX: number, _worldY: number) => {
       setSelectedCharacterId(id);
     },
     [setSelectedCharacterId],
@@ -87,20 +86,6 @@ export const MainWindow: React.FC = () => {
         // Register character click handler
         gm.onCharacterClick(handleCharacterClick);
 
-        // Register seat index lookup for debug info panel
-        setSeatIndexLookup((key) => gm.getSeatIndex(key));
-
-        // Register world→screen converter for info panel positioning
-        setWorldToScreenFn((wx, wy) => {
-          const scene = gm.getScene();
-          if (!scene) return { x: 0, y: 0 };
-          const cam = scene.cameras.main;
-          return {
-            x: (wx - cam.scrollX) * cam.zoom,
-            y: (wy - cam.scrollY) * cam.zoom,
-          };
-        });
-
         // Start in offline mode until Gateway connects
         gm.setOnlineMode(false);
         gm.setStatusText("🦞 OpenClaw Wallpaper");
@@ -123,8 +108,6 @@ export const MainWindow: React.FC = () => {
       if (gameManagerRef.current) {
         gameManagerRef.current.destroy();
         gameManagerRef.current = null;
-        setSeatIndexLookup(null);
-        setWorldToScreenFn(null);
       }
     };
   }, [handleCharacterClick]);
@@ -316,9 +299,9 @@ export const MainWindow: React.FC = () => {
     const charManager = gm.getCharacterManager();
     if (charManager) {
       console.log("[Wallpaper] Syncing characters with sessions:", sessions.length, "sessions");
-      charManager.syncWithSessions(sessions);
+      charManager.syncWithSessions(sessions, agents);
     }
-  }, [sessions, connectionStatus, gameReady]);
+  }, [sessions, agents, connectionStatus, gameReady]);
 
   // ─── Periodic session refresh (catch short-lived active states) ──
 
@@ -371,8 +354,7 @@ export const MainWindow: React.FC = () => {
         </div>
       )}
 
-      {/* Agent Info Panel (floating, appears on character click) */}
-      {gameReady && <AgentInfoPanelWithPosition />}
+      {/* Info bubble is now rendered by Phaser (InfoBubble.ts) — no React panel needed */}
     </div>
   );
 };

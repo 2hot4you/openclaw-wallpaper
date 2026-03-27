@@ -22,7 +22,8 @@ import { AgentSprite, type AgentStatus, type CharacterClickHandler } from "./Age
 import { CHARACTER_SPRITES } from "../config/animations";
 import type { Direction } from "../config/animations";
 import type { OfficeScene } from "../scenes/OfficeScene";
-import type { SessionData } from "../../gateway/types";
+import type { SessionData, AgentData } from "../../gateway/types";
+import { InfoBubble } from "../ui/InfoBubble";
 
 // ── Layout constants ────────────────────────────────────────
 
@@ -56,7 +57,15 @@ export class AgentManager {
   private seatAssignments: Map<string, number> = new Map(); // sessionKey → subagentSeats index
   private usedSeats: Set<number> = new Set();
   private nextSpriteIndex = 0;
-  private clickHandler: CharacterClickHandler | null = null;
+  /** The actual handler set on sprites (wraps external + bubble logic) */
+  private _internalClickHandler: CharacterClickHandler | null = null;
+
+  /** Info bubble (Phaser-native, world space) */
+  private infoBubble: InfoBubble;
+
+  /** Last synced session + agent data (for bubble display) */
+  private lastSessions: SessionData[] = [];
+  private lastAgents: AgentData[] = [];
 
   /** Boss positions resolved from tilemap */
   private bossWorkSeat: SeatInfo | null = null;  // Main_work_right
@@ -70,6 +79,7 @@ export class AgentManager {
 
   constructor(scene: OfficeScene) {
     this.scene = scene;
+    this.infoBubble = new InfoBubble(scene);
     this.resolvePositions();
   }
 
@@ -77,11 +87,38 @@ export class AgentManager {
 
   /**
    * Register a click handler for all characters.
+   * Also sets up internal Phaser info bubble on click.
    */
   onCharacterClick(handler: CharacterClickHandler | null): void {
-    this.clickHandler = handler;
+
+    // Internal handler that shows the Phaser info bubble
+    const internalHandler: CharacterClickHandler = (id, _sx, _sy, worldX, worldY) => {
+      // Find session + agent data for this character
+      const session = this.lastSessions.find((s) => s.key === id);
+      if (!session) return;
+
+      const agent = session.agentId
+        ? this.lastAgents.find((a) => a.agentId === session.agentId)
+        : undefined;
+
+      const seatName = this.getSeatIndex(id);
+
+      // Toggle: if clicking the same character, hide
+      if (this.infoBubble.visible && this.infoBubble.currentTargetId === id) {
+        this.infoBubble.hide();
+        return;
+      }
+
+      this.infoBubble.show(worldX, worldY, session, agent, seatName);
+
+      // Also call external handler if set
+      handler?.(id, _sx, _sy, worldX, worldY);
+    };
+
+    this._internalClickHandler = internalHandler;
+
     for (const agent of this.agents.values()) {
-      agent.setClickHandler(handler);
+      agent.setClickHandler(internalHandler);
     }
   }
 
@@ -106,7 +143,10 @@ export class AgentManager {
   /**
    * Sync agents with current session list from Gateway.
    */
-  syncWithSessions(sessions: SessionData[]): void {
+  syncWithSessions(sessions: SessionData[], agents?: AgentData[]): void {
+    // Store for bubble display
+    this.lastSessions = sessions;
+    if (agents) this.lastAgents = agents;
     const sessionKeys = new Set(sessions.map((s) => s.key));
 
     // ── Handle agents whose session disappeared ──
@@ -178,6 +218,7 @@ export class AgentManager {
    * Destroy all agents and clean up.
    */
   destroy(): void {
+    this.infoBubble.destroy();
     for (const agent of this.agents.values()) {
       agent.destroy();
     }
@@ -339,7 +380,7 @@ export class AgentManager {
       }
     }
 
-    agent.setClickHandler(this.clickHandler);
+    agent.setClickHandler(this._internalClickHandler);
     this.agents.set(session.key, agent);
 
     return agent;
