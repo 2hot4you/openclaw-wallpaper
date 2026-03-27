@@ -4,11 +4,14 @@ import App from "./App";
 
 // ─── Debug logger: writes to file + console ───────────
 const LOG_LINES: string[] = [];
+const _origLog = console.log.bind(console);
+const _origError = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
 
 function debugLog(...args: unknown[]) {
   const line = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
   LOG_LINES.push(line);
-  console.log(...args);
+  _origLog(...args);
   
   // Write to DOM element for visibility
   const logEl = document.getElementById("debug-log");
@@ -18,12 +21,9 @@ function debugLog(...args: unknown[]) {
 }
 
 // Override console.log/error/warn to capture everything
-const origLog = console.log;
-const origError = console.error;
-const origWarn = console.warn;
-console.log = (...args: unknown[]) => { debugLog("[LOG]", ...args); origLog(...args); };
-console.error = (...args: unknown[]) => { debugLog("[ERR]", ...args); origError(...args); };
-console.warn = (...args: unknown[]) => { debugLog("[WRN]", ...args); origWarn(...args); };
+console.log = (...args: unknown[]) => { debugLog("[LOG]", ...args); };
+console.error = (...args: unknown[]) => { debugLog("[ERR]", ...args); };
+console.warn = (...args: unknown[]) => { debugLog("[WRN]", ...args); };
 
 // ─── Add visible debug panel to page ───────────
 const debugPanel = document.createElement("div");
