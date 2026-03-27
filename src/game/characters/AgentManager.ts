@@ -72,12 +72,16 @@ export class AgentManager {
     for (const session of sessions) {
       const existing = this.agents.get(session.key);
       const status = this.mapSessionStatus(session.status);
+      console.log("[AgentManager] Session:", session.key.substring(0, 30), "label:", session.label, "rawStatus:", session.status, "→", status, "existing:", !!existing);
 
       let agent: AgentSprite;
       if (!existing) {
         // Spawn new agent
         const spawned = this.spawnAgent(session);
-        if (!spawned) continue;
+        if (!spawned) {
+          console.warn("[AgentManager] Failed to spawn for", session.key);
+          continue;
+        }
         agent = spawned;
       } else {
         agent = existing;
@@ -89,9 +93,12 @@ export class AgentManager {
 
       // Reposition if status changed (walk to new zone) or just spawned
       if (prevStatus !== status || !existing) {
+        console.log("[AgentManager] Repositioning", session.label, prevStatus, "→", status);
         this.positionAgent(session.key, agent, status);
       }
     }
+
+    console.log("[AgentManager] After sync — total agents:", this.agents.size, "seats used:", this.usedSeats.size);
   }
 
   /**
