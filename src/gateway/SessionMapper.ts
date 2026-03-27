@@ -58,7 +58,7 @@ export function mapSessionsToAgents(
       `Session ${session.key.slice(0, 8)}`;
 
     // ── map animation state ──
-    const animState = mapStatus(session.status);
+    const animState = mapStatus(session.status, session.updatedAt);
 
     result.push({
       id: session.key,
@@ -74,7 +74,10 @@ export function mapSessionsToAgents(
   return result;
 }
 
-function mapStatus(status?: string): CharacterAnimState {
+/** Threshold: if updatedAt is within this many ms, treat "done" as "working" */
+const ACTIVE_THRESHOLD_MS = 15_000;
+
+function mapStatus(status?: string, updatedAt?: number): CharacterAnimState {
   switch (status) {
     case "active":
     case "running":
@@ -84,7 +87,15 @@ function mapStatus(status?: string): CharacterAnimState {
     case "error":
     case "failed":
       return "error";
-    default:
-      return "idle";
   }
+
+  // Heuristic: "done" with very recent updatedAt → working
+  if (status === "done" && updatedAt) {
+    const age = Date.now() - updatedAt;
+    if (age < ACTIVE_THRESHOLD_MS) {
+      return "working";
+    }
+  }
+
+  return "idle";
 }

@@ -134,7 +134,7 @@ export class AgentManager {
       const existing = this.agents.get(session.key);
       if (existing?.isDespawning) continue;
 
-      const status = this.mapSessionStatus(session.status);
+      const status = this.mapSessionStatus(session.status, session.updatedAt);
       console.log(
         "[AgentManager] Session:", session.key.substring(0, 40),
         "label:", session.label,
@@ -250,7 +250,18 @@ export class AgentManager {
 
   // ── Status mapping ────────────────────────────────
 
-  private mapSessionStatus(status: string | undefined): AgentStatus {
+  /**
+   * Map session status → AgentSprite status.
+   *
+   * Heuristic: if the session's `updatedAt` is very recent (within ACTIVE_THRESHOLD_MS)
+   * and the raw status is "done", we treat it as "working". This catches subagent
+   * sessions that complete between polls — Gateway returns "done" but the agent
+   * was clearly just active.
+   */
+  private static readonly ACTIVE_THRESHOLD_MS = 15_000;
+
+  private mapSessionStatus(status: string | undefined, updatedAt?: number): AgentStatus {
+    // Explicit active states
     switch (status) {
       case "active":
       case "running":
@@ -259,12 +270,17 @@ export class AgentManager {
       case "error":
       case "failed":
         return "error";
-      case "idle":
-      case "closed":
-      case "done":
-      default:
-        return "idle";
     }
+
+    // Heuristic: "done" with very recent updatedAt → treat as working
+    if (status === "done" && updatedAt) {
+      const age = Date.now() - updatedAt;
+      if (age < AgentManager.ACTIVE_THRESHOLD_MS) {
+        return "working";
+      }
+    }
+
+    return "idle";
   }
 
   // ── Spawn ─────────────────────────────────────────

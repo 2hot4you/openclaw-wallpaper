@@ -115,6 +115,33 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       get().refreshSessions().catch(() => {});
     });
 
+    // agent event — catches subagent status changes (run accepted/done)
+    client.on("agent", (payload) => {
+      const p = payload as {
+        sessionKey?: string;
+        status?: string;
+        runId?: string;
+      } | null;
+      console.log("[gatewayStore] agent event:", p?.sessionKey?.substring(0, 40), "status:", p?.status);
+      if (p?.sessionKey && p?.status) {
+        const isActive = p.status === "accepted" || p.status === "running";
+        const mappedStatus = isActive ? "running" : p.status;
+        const sessions = get().sessions.map((s) =>
+          s.key === p.sessionKey
+            ? {
+                ...s,
+                status: mappedStatus,
+                updatedAt: Date.now(),
+                _optimisticUntil: isActive ? Date.now() + 15_000 : undefined,
+              }
+            : s,
+        );
+        const characters = mapSessionsToAgents(sessions, get().agents);
+        set({ sessions, characters });
+      }
+      get().refreshSessions().catch(() => {});
+    });
+
     // shutdown event
     client.on("shutdown", () => {
       set({

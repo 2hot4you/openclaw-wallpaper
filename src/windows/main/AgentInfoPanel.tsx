@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useGatewayStore } from "../../stores/gatewayStore";
 
@@ -104,6 +104,14 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
   const sessions = useGatewayStore((s) => s.sessions);
   const agents = useGatewayStore((s) => s.agents);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Force re-render on window resize so position recalculates
+  const [, setResizeCount] = useState(0);
+  useEffect(() => {
+    const onResize = () => setResizeCount((c) => c + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const session = selectedId
     ? sessions.find((s) => s.key === selectedId)
