@@ -63,6 +63,7 @@ export class AgentCharacterManager {
    * Sync characters with current session list.
    */
   syncWithSessions(sessions: SessionData[]): void {
+    console.log("[CharacterManager] syncWithSessions called with", sessions.length, "sessions");
     const sessionKeys = new Set(sessions.map((s) => s.key));
 
     // Remove characters for sessions that no longer exist
@@ -79,7 +80,9 @@ export class AgentCharacterManager {
       if (!character) {
         // New character
         const palette = getPalette(this.nextIndex);
-        character = new AgentCharacter(session.key, session.label ?? session.key, palette);
+        const displayName = session.label ?? session.agentId ?? session.key.split(":").pop() ?? "agent";
+        console.log("[CharacterManager] Creating character:", displayName, "palette:", this.nextIndex, "scene:", this.sceneWidth, "x", this.sceneHeight);
+        character = new AgentCharacter(session.key, displayName, palette);
         character.onClick = this._onCharacterClick;
         this.nextIndex++;
         this.characters.set(session.key, character);
@@ -92,6 +95,7 @@ export class AgentCharacterManager {
     }
 
     this.repositionAll();
+    console.log("[CharacterManager] Total characters:", this.characters.size, "container children:", this.container.children.length);
   }
 
   /**
