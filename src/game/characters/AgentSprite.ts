@@ -150,16 +150,27 @@ export class AgentSprite {
   }
 
   /**
-   * Set the agent's status and update emote.
+   * Set the agent's status and update emote + animation.
    */
   setStatus(status: AgentStatus): void {
     if (this._status === status) return;
+    const prev = this._status;
     this._status = status;
+
+    // Clean up previous status effects
+    if (prev === "working") this.stopWorkBob();
+    if (prev === "error") this.stopErrorFlash();
+
     this.updateEmote();
+    // If not moving, immediately update animation
+    if (!this._isMoving) {
+      this.playStatusAnim();
+    }
   }
 
   /**
    * Move to a world position with walking animation.
+   * After arriving, plays the appropriate animation based on status.
    */
   moveTo(targetX: number, targetY: number, onComplete?: () => void): void {
     if (this._isDespawned || !this.spawnComplete) return;
@@ -172,6 +183,7 @@ export class AgentSprite {
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance < 4) {
+      this.playStatusAnim();
       onComplete?.();
       return;
     }
@@ -205,7 +217,8 @@ export class AgentSprite {
       onComplete: () => {
         this._isMoving = false;
         this.moveTimeline = null;
-        this.playIdleAnim();
+        // After arriving, play the appropriate anim for current status
+        this.playStatusAnim();
         onComplete?.();
       },
     });
@@ -219,6 +232,8 @@ export class AgentSprite {
     this._isDespawned = true;
 
     this.stopMovement();
+    this.stopWorkBob();
+    this.stopErrorFlash();
     this.hideEmote();
 
     this.scene.tweens.add({
@@ -245,6 +260,81 @@ export class AgentSprite {
         this.sprite.x,
         this.sprite.y - FRAME_HEIGHT * EMOTE_Y_OFFSET,
       );
+    }
+  }
+
+  /**
+   * Play the appropriate animation based on current status.
+   * - working: face down (toward screen), fast idle anim to simulate typing
+   * - idle: normal idle facing current direction
+   * - error: idle with red tint flash
+   */
+  private playStatusAnim(): void {
+    if (this._isDespawned) return;
+
+    if (this._status === "working") {
+      // Face down (toward screen/desk) and play a faster idle to look like typing
+      this._facing = "down";
+      const workKey = `${this.spriteKey}:idle-down`;
+      if (this.scene.anims.exists(workKey)) {
+        this.sprite.play({ key: workKey, frameRate: 16 }); // faster = typing feel
+      }
+      // Subtle bobbing to show activity
+      if (!this._workBob) {
+        this._workBob = this.scene.tweens.add({
+          targets: this.sprite,
+          y: this.sprite.y - 2,
+          duration: 400,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut",
+        });
+      }
+    } else {
+      // Stop work bob if active
+      this.stopWorkBob();
+      this.sprite.clearTint();
+
+      if (this._status === "error") {
+        // Red tint flash for error
+        this.playIdleAnim();
+        if (!this._errorFlash) {
+          this._errorFlash = this.scene.time.addEvent({
+            delay: 500,
+            callback: () => {
+              if (this._isDespawned) return;
+              if (this.sprite.tintTopLeft === 0xff4444) {
+                this.sprite.clearTint();
+              } else {
+                this.sprite.setTint(0xff4444);
+              }
+            },
+            loop: true,
+          });
+        }
+      } else {
+        // Normal idle
+        this.stopErrorFlash();
+        this.playIdleAnim();
+      }
+    }
+  }
+
+  private _workBob: Phaser.Tweens.Tween | null = null;
+  private _errorFlash: Phaser.Time.TimerEvent | null = null;
+
+  private stopWorkBob(): void {
+    if (this._workBob) {
+      this._workBob.stop();
+      this._workBob = null;
+    }
+  }
+
+  private stopErrorFlash(): void {
+    if (this._errorFlash) {
+      this._errorFlash.destroy();
+      this._errorFlash = null;
+      this.sprite.clearTint();
     }
   }
 
@@ -313,6 +403,8 @@ export class AgentSprite {
    */
   destroy(): void {
     this.stopMovement();
+    this.stopWorkBob();
+    this.stopErrorFlash();
     this.sprite.destroy();
     this.nameTag.destroy();
     if (this.emoteSprite) {

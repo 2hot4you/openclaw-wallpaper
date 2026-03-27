@@ -83,11 +83,12 @@ export class AgentManager {
         agent = existing;
       }
 
-      // Update status and position if changed
+      // Update status — triggers emote + animation change
       const prevStatus = agent.status;
       agent.setStatus(status);
 
-      if (prevStatus !== status || !agent.isMoving) {
+      // Reposition if status changed (walk to new zone) or just spawned
+      if (prevStatus !== status || !existing) {
         this.positionAgent(session.key, agent, status);
       }
     }
