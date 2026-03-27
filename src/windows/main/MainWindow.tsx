@@ -69,14 +69,17 @@ export const MainWindow: React.FC = () => {
 
     async function initPixi() {
       try {
+        console.log("[Wallpaper] Loading PixiJS module...");
         setStatus("Loading PixiJS module...");
         SceneManagerModule = await import("../../pixi/engine/SceneManager");
         if (cancelled) return;
 
+        console.log("[Wallpaper] Creating SceneManager...");
         setStatus("Creating SceneManager...");
         const sm = new SceneManagerModule.SceneManager();
         sceneManagerRef.current = sm;
 
+        console.log("[Wallpaper] Initializing renderer...");
         setStatus("Initializing renderer...");
         await sm.init(containerRef.current!);
         if (cancelled) return;
@@ -88,10 +91,12 @@ export const MainWindow: React.FC = () => {
         sm.setOnlineMode(false);
         sm.setStatusText("🦞 OpenClaw Wallpaper");
 
+        console.log("[Wallpaper] PixiJS ready, setting pixiReady=true");
         setStatus("Running");
         setPixiReady(true);
       } catch (err) {
         if (cancelled) return;
+        console.error("[Wallpaper] PixiJS init error:", err);
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
       }
@@ -111,7 +116,7 @@ export const MainWindow: React.FC = () => {
   // ─── Gateway Connection ─────────────────────────────
 
   useEffect(() => {
-    if (!pixiReady) return;
+    console.log("[Wallpaper] Gateway useEffect triggered, pixiReady:", pixiReady);
 
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
