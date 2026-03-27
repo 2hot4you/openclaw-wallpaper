@@ -115,11 +115,15 @@ export const MainWindow: React.FC = () => {
 
   // ─── Gateway Connection ─────────────────────────────
 
+  const gameReadyRef = useRef(gameReady);
+  gameReadyRef.current = gameReady;
+
   useEffect(() => {
-    console.log("[Wallpaper] Gateway useEffect triggered, gameReady:", gameReady);
+    console.log("[Wallpaper] Gateway useEffect triggered");
 
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
+    let connected = false;
 
     async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
       try {
@@ -156,7 +160,7 @@ export const MainWindow: React.FC = () => {
     }
 
     // Initial connection attempt
-    connectToGateway();
+    connectToGateway().then(() => { connected = true; }).catch(() => {});
 
     // Periodic status check (reconnect if disconnected)
     statusCheckTimer = setInterval(async () => {
@@ -182,9 +186,10 @@ export const MainWindow: React.FC = () => {
     return () => {
       cancelled = true;
       if (statusCheckTimer) clearInterval(statusCheckTimer);
-      disconnect();
+      // Only disconnect on true unmount, not on re-render
     };
-  }, [gameReady, connect, disconnect]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Tray Events ────────────────────────────────────
 
