@@ -19,7 +19,7 @@ import type { OfficeScene } from "../scenes/OfficeScene";
 import type { SessionData } from "../../gateway/types";
 
 /** Spacing between idle characters in the rest area */
-const REST_SPACING = 40;
+const REST_SPACING = 60;
 
 /** Default rest area (fraction of map size) if no POI named "rest" found */
 const DEFAULT_REST_X_FRAC = 0.75;
@@ -107,11 +107,15 @@ export class AgentManager {
   private mapSessionStatus(status: string | undefined): AgentStatus {
     switch (status) {
       case "active":
+      case "running":
+      case "busy":
         return "working";
       case "error":
+      case "failed":
         return "error";
       case "idle":
       case "closed":
+      case "done":
       default:
         return "idle";
     }
@@ -222,9 +226,12 @@ export class AgentManager {
    * Agents line up in the POI "rest" area, spaced apart.
    */
   private getRestPosition(sessionKey: string): { x: number; y: number } {
-    // Find rest POI
+    // Find rest POI — look for sofa, rest, lounge, or any seating area
     const restPOI = this.scene.poiPositions.find(
-      (p) => p.name.toLowerCase().includes("rest") || p.name.toLowerCase().includes("lounge"),
+      (p) => {
+        const name = p.name.toLowerCase();
+        return name.includes("rest") || name.includes("lounge") || name.includes("sofa") || name.includes("couch");
+      },
     );
 
     const baseX = restPOI?.x ?? this.scene.mapWidth * DEFAULT_REST_X_FRAC;
