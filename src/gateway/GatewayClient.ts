@@ -230,10 +230,10 @@ export class GatewayClient {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "openclaw-control-ui",
+        id: "gateway-client",
         version: "0.1.0",
         platform: this.detectPlatform(),
-        mode: "ui",
+        mode: "backend",
       },
       role: "operator",
       scopes: ["operator.read", "operator.write"],
