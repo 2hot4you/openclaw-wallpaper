@@ -9,7 +9,7 @@ import {
   stopOpenClaw,
   updateTrayStatus,
 } from "../../utils/tauri-ipc";
-import { AgentInfoPanelWithPosition, setInfoPanelPosition } from "./AgentInfoPanel";
+import { AgentInfoPanelWithPosition, setInfoPanelPosition, setSeatIndexLookup } from "./AgentInfoPanel";
 import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load GameManager to isolate Phaser init
@@ -87,6 +87,9 @@ export const MainWindow: React.FC = () => {
         // Register character click handler
         gm.onCharacterClick(handleCharacterClick);
 
+        // Register seat index lookup for debug info panel
+        setSeatIndexLookup((key) => gm.getSeatIndex(key));
+
         // Start in offline mode until Gateway connects
         gm.setOnlineMode(false);
         gm.setStatusText("🦞 OpenClaw Wallpaper");
@@ -109,6 +112,7 @@ export const MainWindow: React.FC = () => {
       if (gameManagerRef.current) {
         gameManagerRef.current.destroy();
         gameManagerRef.current = null;
+        setSeatIndexLookup(null);
       }
     };
   }, [handleCharacterClick]);

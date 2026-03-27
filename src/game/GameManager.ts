@@ -167,6 +167,13 @@ export class GameManager {
   }
 
   /**
+   * Get seat index for a given session key (debug helper).
+   */
+  getSeatIndex(sessionKey: string): number | null {
+    return this.agentManager?.getSeatIndex(sessionKey) ?? null;
+  }
+
+  /**
    * Get the OfficeScene.
    */
   getScene(): OfficeScene | null {

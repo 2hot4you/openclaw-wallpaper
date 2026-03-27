@@ -145,6 +145,15 @@ export class AgentManager {
   }
 
   /**
+   * Get the seat index assigned to an agent (for debug display).
+   * Returns the seat index or null if not assigned.
+   */
+  getSeatIndex(sessionKey: string): number | null {
+    if (this.isMainAgent(sessionKey)) return BOSS_SEAT_INDEX;
+    return this.seatAssignments.get(sessionKey) ?? null;
+  }
+
+  /**
    * Destroy all agents and clean up.
    */
   destroy(): void {

@@ -49,6 +49,18 @@ export function setInfoPanelPosition(x: number, y: number): void {
   _panelPosition.y = y;
 }
 
+// ── Module-level seat index lookup ───────────────────────────
+
+let _seatIndexLookup: ((sessionKey: string) => number | null) | null = null;
+
+/**
+ * Register a function that returns the seat index for a given session key.
+ * Called once from MainWindow after GameManager is ready.
+ */
+export function setSeatIndexLookup(fn: ((sessionKey: string) => number | null) | null): void {
+  _seatIndexLookup = fn;
+}
+
 // ── Bubble constants ─────────────────────────────────────────
 
 const BUBBLE_WIDTH = 230;
@@ -253,6 +265,16 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
         >
           🕐 {formatRelativeTime(session.updatedAt)}
         </div>
+
+        {/* Debug: seat index */}
+        {(() => {
+          const seatIdx = _seatIndexLookup?.(session.key);
+          return seatIdx !== null && seatIdx !== undefined ? (
+            <div style={{ color: "#b07030", fontSize: 7, marginTop: 3 }}>
+              💺 Seat #{seatIdx}
+            </div>
+          ) : null;
+        })()}
 
         {/* Triangle tail (border) */}
         <div style={tailStyle} />
