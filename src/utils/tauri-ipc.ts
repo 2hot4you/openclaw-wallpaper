@@ -30,6 +30,11 @@ export async function getGatewayUrl(): Promise<string> {
   return invoke<string>("get_gateway_url");
 }
 
+/** Get the Gateway auth token from OpenClaw config. */
+export async function getGatewayToken(): Promise<string> {
+  return invoke<string>("get_gateway_token");
+}
+
 /** Update tray icon status (called when connection status changes). */
 export async function updateTrayStatus(isOnline: boolean): Promise<void> {
   return invoke<void>("update_tray_status", { isOnline });

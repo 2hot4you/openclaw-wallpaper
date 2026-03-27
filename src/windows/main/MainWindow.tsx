@@ -4,6 +4,7 @@ import { useAppStore } from "../../stores/appStore";
 import {
   checkOpenClawStatus,
   getGatewayUrl,
+  getGatewayToken,
   startOpenClaw,
   stopOpenClaw,
   updateTrayStatus,
@@ -123,7 +124,13 @@ export const MainWindow: React.FC = () => {
         if (online) {
           const url = await getGatewayUrl();
           if (cancelled) return;
-          await connect(url);
+          let token: string | undefined;
+          try {
+            token = await getGatewayToken();
+          } catch {
+            // Token not available — try without
+          }
+          await connect(url, token);
         }
       } catch {
         // Gateway not available — stay in offline mode
@@ -144,7 +151,9 @@ export const MainWindow: React.FC = () => {
           if (online && !cancelled) {
             const url = await getGatewayUrl();
             if (!cancelled) {
-              await connect(url);
+              let token: string | undefined;
+              try { token = await getGatewayToken(); } catch {}
+              await connect(url, token);
             }
           }
         } catch {
@@ -174,7 +183,9 @@ export const MainWindow: React.FC = () => {
             const online = await checkOpenClawStatus();
             if (online && connectionStatusRef.current === "disconnected") {
               const url = await getGatewayUrl();
-              await connect(url);
+              let token: string | undefined;
+              try { token = await getGatewayToken(); } catch {}
+              await connect(url, token);
             } else if (connectionStatusRef.current === "connected") {
               await refreshSessions();
             }
@@ -193,7 +204,9 @@ export const MainWindow: React.FC = () => {
                 const online = await checkOpenClawStatus();
                 if (online) {
                   const url = await getGatewayUrl();
-                  await connect(url);
+                  let token: string | undefined;
+                  try { token = await getGatewayToken(); } catch {}
+                  await connect(url, token);
                 }
               } catch {
                 // Ignore

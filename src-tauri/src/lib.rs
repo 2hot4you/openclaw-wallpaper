@@ -15,6 +15,7 @@ pub fn run() {
             commands::openclaw::stop_openclaw,
             commands::openclaw::restart_openclaw,
             commands::openclaw::get_gateway_url,
+            commands::openclaw::get_gateway_token,
             commands::openclaw::update_tray_status,
         ])
         .setup(|app| {
