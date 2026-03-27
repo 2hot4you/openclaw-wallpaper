@@ -118,22 +118,30 @@ export const MainWindow: React.FC = () => {
 
     async function connectToGateway() {
       try {
+        console.log("[Wallpaper] Checking OpenClaw status...");
         const online = await checkOpenClawStatus();
+        console.log("[Wallpaper] OpenClaw online:", online);
         if (cancelled) return;
 
         if (online) {
           const url = await getGatewayUrl();
+          console.log("[Wallpaper] Gateway URL:", url);
           if (cancelled) return;
           let token: string | undefined;
           try {
             token = await getGatewayToken();
-          } catch {
-            // Token not available — try without
+            console.log("[Wallpaper] Got token:", token ? `${token.substring(0, 8)}...` : "none");
+          } catch (tokenErr) {
+            console.warn("[Wallpaper] Failed to get token:", tokenErr);
           }
+          console.log("[Wallpaper] Connecting to Gateway...");
           await connect(url, token);
+          console.log("[Wallpaper] Connect call completed");
+        } else {
+          console.log("[Wallpaper] OpenClaw not online, staying in offline mode");
         }
-      } catch {
-        // Gateway not available — stay in offline mode
+      } catch (err) {
+        console.error("[Wallpaper] connectToGateway error:", err);
       }
     }
 

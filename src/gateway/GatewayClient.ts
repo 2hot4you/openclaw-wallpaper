@@ -166,20 +166,24 @@ export class GatewayClient {
   private doConnect(): Promise<ConnectSnapshot | undefined> {
     return new Promise((resolve, reject) => {
       try {
+        console.log("[GatewayClient] Connecting to:", this._url);
         const ws = new WebSocket(this._url);
         this.ws = ws;
 
         ws.onopen = () => {
+          console.log("[GatewayClient] WebSocket opened, sending handshake...");
           this.lastActivity = Date.now();
           // Send the connect handshake
           this.sendHandshake()
             .then((snapshot) => {
+              console.log("[GatewayClient] Handshake success, snapshot:", snapshot);
               this.reconnectAttempts = 0;
               this.setStatus("connected");
               this.emit("connected", snapshot);
               resolve(snapshot);
             })
             .catch((err) => {
+              console.error("[GatewayClient] Handshake failed:", err);
               this.closeWs();
               reject(err);
             });
@@ -190,7 +194,8 @@ export class GatewayClient {
           this.handleMessage(ev.data as string);
         };
 
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
+          console.log("[GatewayClient] WebSocket closed, code:", ev.code, "reason:", ev.reason);
           const wasConnected = this._status === "connected";
           this.rejectAllPending("Connection closed");
 
@@ -206,7 +211,8 @@ export class GatewayClient {
           }
         };
 
-        ws.onerror = () => {
+        ws.onerror = (ev) => {
+          console.error("[GatewayClient] WebSocket error:", ev);
           // onclose fires right after — actual handling happens there.
           // Reject only if we haven't resolved yet (initial connect).
           if (this._status === "connecting") {
