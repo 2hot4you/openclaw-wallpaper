@@ -230,10 +230,10 @@ export class GatewayClient {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "gateway-client",
+        id: "cli",
         version: "0.1.0",
         platform: this.detectPlatform(),
-        mode: "backend",
+        mode: "cli",
       },
       role: "operator",
       scopes: ["operator.read", "operator.write"],
