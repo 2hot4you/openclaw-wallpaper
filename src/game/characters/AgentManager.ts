@@ -136,9 +136,12 @@ export class AgentManager {
       CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
     this.nextSpriteIndex++;
 
-    // Default spawn position (center of map)
-    const spawnX = this.scene.mapWidth / 2;
-    const spawnY = this.scene.mapHeight / 2;
+    // Spawn at rest area position (will be repositioned right after)
+    const restPos = this.getRestPosition(session.key);
+    const spawnX = restPos.x;
+    const spawnY = restPos.y;
+
+    console.log("[AgentManager] Spawning", displayName, "at", spawnX.toFixed(0), spawnY.toFixed(0), "sprite:", spriteConfig.key);
 
     const agent = new AgentSprite(
       this.scene,

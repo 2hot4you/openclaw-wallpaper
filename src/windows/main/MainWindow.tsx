@@ -306,6 +306,18 @@ export const MainWindow: React.FC = () => {
     }
   }, [sessions, connectionStatus, gameReady]);
 
+  // ─── Periodic session refresh (catch short-lived active states) ──
+
+  useEffect(() => {
+    if (connectionStatus !== "connected") return;
+
+    const timer = setInterval(() => {
+      refreshSessions();
+    }, 3000); // every 3 seconds
+
+    return () => clearInterval(timer);
+  }, [connectionStatus, refreshSessions]);
+
   return (
     <div
       ref={containerRef}
