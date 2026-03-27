@@ -28,6 +28,20 @@ const ENTRANCE_Y_FRAC = 0.7; // fraction of mapHeight
 /** Main agent session key */
 const MAIN_AGENT_KEY = "agent:main:main";
 
+/** Boss seat index in the tilemap spawns array */
+const BOSS_SEAT_INDEX = 1;
+
+/** Seat index that should never be assigned (no one sits there) */
+const EXCLUDED_SEAT_INDICES = new Set([0]);
+
+/**
+ * Y offset applied to seat positions so the character sprite
+ * overlaps the chair and looks like they are sitting, not floating.
+ * Positive = move sprite downward.
+ * Sprite is 48×96 with origin (0.5, 1) — bottom-center.
+ */
+const SEAT_Y_OFFSET = 16;
+
 export class AgentManager {
   private scene: OfficeScene;
   private agents: Map<string, AgentSprite> = new Map();
@@ -164,21 +178,17 @@ export class AgentManager {
       y: this.scene.mapHeight ? this.scene.mapHeight * ENTRANCE_Y_FRAC : 672,
     };
 
-    // Boss position — seat with the largest Y (closest to bottom of map)
-    if (this.scene.seatPositions.length > 0) {
-      let maxY = -1;
-      let bossIdx = 0;
-      for (let i = 0; i < this.scene.seatPositions.length; i++) {
-        if (this.scene.seatPositions[i].y > maxY) {
-          maxY = this.scene.seatPositions[i].y;
-          bossIdx = i;
-        }
-      }
-      const bossSeat = this.scene.seatPositions[bossIdx];
-      this.bossPosition = { x: bossSeat.x, y: bossSeat.y };
-      this.bossSeatIndex = bossIdx;
-      // Reserve boss seat
-      this.usedSeats.add(bossIdx);
+    // Boss position — fixed seat index 1
+    if (BOSS_SEAT_INDEX < this.scene.seatPositions.length) {
+      const bossSeat = this.scene.seatPositions[BOSS_SEAT_INDEX];
+      this.bossPosition = { x: bossSeat.x, y: bossSeat.y + SEAT_Y_OFFSET };
+      this.bossSeatIndex = BOSS_SEAT_INDEX;
+      this.usedSeats.add(BOSS_SEAT_INDEX);
+    }
+
+    // Also exclude seats that should never be assigned
+    for (const idx of EXCLUDED_SEAT_INDICES) {
+      this.usedSeats.add(idx);
     }
 
     console.log(
@@ -186,6 +196,7 @@ export class AgentManager {
       "bossSeatIdx:", this.bossSeatIndex,
       "entrance:", this.entrancePosition,
       "totalSeats:", this.scene.seatPositions.length,
+      "excluded:", [...EXCLUDED_SEAT_INDICES],
     );
   }
 
@@ -285,7 +296,7 @@ export class AgentManager {
     const seatIdx = this.assignSeat(sessionKey);
     if (seatIdx !== null && seatIdx < this.scene.seatPositions.length) {
       const seat = this.scene.seatPositions[seatIdx];
-      agent.moveTo(seat.x, seat.y);
+      agent.moveTo(seat.x, seat.y + SEAT_Y_OFFSET);
     }
   }
 
@@ -300,9 +311,10 @@ export class AgentManager {
     const existing = this.seatAssignments.get(sessionKey);
     if (existing !== undefined) return existing;
 
-    // Find first free seat (skip boss seat)
+    // Find first free seat (skip boss seat and excluded seats)
     for (let i = 0; i < this.scene.seatPositions.length; i++) {
       if (i === this.bossSeatIndex) continue;
+      if (EXCLUDED_SEAT_INDICES.has(i)) continue;
       if (!this.usedSeats.has(i)) {
         this.seatAssignments.set(sessionKey, i);
         this.usedSeats.add(i);
@@ -311,9 +323,9 @@ export class AgentManager {
       }
     }
 
-    // No free seats — share the last non-boss seat
+    // No free seats — share the last usable seat
     for (let i = this.scene.seatPositions.length - 1; i >= 0; i--) {
-      if (i !== this.bossSeatIndex) return i;
+      if (i !== this.bossSeatIndex && !EXCLUDED_SEAT_INDICES.has(i)) return i;
     }
     return null;
   }
