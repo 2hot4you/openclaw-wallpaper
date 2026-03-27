@@ -291,7 +291,7 @@ export const MainWindow: React.FC = () => {
 
     // Update tray status (fire and forget)
     updateTrayStatus(isOnline).catch(() => {});
-  }, [connectionStatus, setOpenclawOnline]);
+  }, [connectionStatus, setOpenclawOnline, gameReady]);
 
   // ─── Sync sessions → characters ─────────────────────
 
