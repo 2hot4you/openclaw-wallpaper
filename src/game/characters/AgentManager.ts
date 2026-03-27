@@ -20,6 +20,7 @@
 
 import { AgentSprite, type AgentStatus, type CharacterClickHandler } from "./AgentSprite";
 import { CHARACTER_SPRITES } from "../config/animations";
+import type { Direction } from "../config/animations";
 import type { OfficeScene } from "../scenes/OfficeScene";
 import type { SessionData } from "../../gateway/types";
 
@@ -314,6 +315,14 @@ export class AgentManager {
       spawnVisible,
     );
 
+    // Set initial facing for boss (spawns in place, doesn't walk)
+    if (isMain) {
+      const seat = this.bossRestSeat ?? this.bossWorkSeat;
+      if (seat?.facing) {
+        agent.setFacing(seat.facing as Direction);
+      }
+    }
+
     agent.setClickHandler(this.clickHandler);
     this.agents.set(session.key, agent);
 
@@ -333,11 +342,15 @@ export class AgentManager {
         agent.moveTo(
           this.bossWorkSeat.x,
           this.bossWorkSeat.y + SEAT_Y_OFFSET,
+          undefined,
+          this.bossWorkSeat.facing as Direction,
         );
       } else if (this.bossRestSeat) {
         agent.moveTo(
           this.bossRestSeat.x,
           this.bossRestSeat.y + SEAT_Y_OFFSET,
+          undefined,
+          this.bossRestSeat.facing as Direction,
         );
       }
       return;
@@ -347,7 +360,12 @@ export class AgentManager {
     const seatIdx = this.assignSeat(sessionKey);
     if (seatIdx !== null && seatIdx < this.subagentSeats.length) {
       const seat = this.subagentSeats[seatIdx];
-      agent.moveTo(seat.x, seat.y + SEAT_Y_OFFSET);
+      agent.moveTo(
+        seat.x,
+        seat.y + SEAT_Y_OFFSET,
+        undefined,
+        seat.facing as Direction,
+      );
     }
   }
 

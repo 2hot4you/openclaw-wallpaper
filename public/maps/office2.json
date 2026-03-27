@@ -1538,6 +1538,12 @@
                  "name":"subagent_back#3",
                  "opacity":1,
                  "point":true,
+                 "properties":[
+                        {
+                         "name":"facing",
+                         "type":"string",
+                         "value":"up"
+                        }],
                  "rotation":0,
                  "type":"",
                  "visible":true,

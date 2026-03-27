@@ -209,8 +209,9 @@ export class AgentSprite {
   /**
    * Move to a world position with walking animation.
    * After arriving, plays the appropriate animation based on status.
+   * If arrivalFacing is provided, the character faces that direction on arrival.
    */
-  moveTo(targetX: number, targetY: number, onComplete?: () => void): void {
+  moveTo(targetX: number, targetY: number, onComplete?: () => void, arrivalFacing?: Direction): void {
     if (this._isDespawned || !this.spawnComplete) return;
 
     // Cancel any existing movement
@@ -221,6 +222,9 @@ export class AgentSprite {
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance < 4) {
+      if (arrivalFacing) {
+        this._facing = arrivalFacing;
+      }
       this.playStatusAnim();
       onComplete?.();
       return;
@@ -255,6 +259,10 @@ export class AgentSprite {
       onComplete: () => {
         this._isMoving = false;
         this.moveTimeline = null;
+        // Set facing direction on arrival (from seat config)
+        if (arrivalFacing) {
+          this._facing = arrivalFacing;
+        }
         // After arriving, play the appropriate anim for current status
         this.playStatusAnim();
         onComplete?.();
@@ -332,9 +340,8 @@ export class AgentSprite {
     if (this._isDespawned) return;
 
     if (this._status === "working") {
-      // Face down (toward screen/desk) and play a faster idle to look like typing
-      this._facing = "down";
-      const workKey = `${this.spriteKey}:idle-down`;
+      // Play a faster idle to look like typing (keep current facing direction)
+      const workKey = `${this.spriteKey}:idle-${this._facing}`;
       if (this.scene.anims.exists(workKey)) {
         this.sprite.play({ key: workKey, frameRate: 16 }); // faster = typing feel
       }
