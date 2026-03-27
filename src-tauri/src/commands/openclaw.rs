@@ -75,14 +75,29 @@ pub async fn get_gateway_url() -> Result<String, String> {
 
 /// Read the Gateway auth token from the OpenClaw config file.
 ///
-/// Searches for `openclaw.json` in standard locations:
-///   - Windows: %USERPROFILE%\.openclaw\openclaw.json
-///   - macOS/Linux: ~/.openclaw/openclaw.json
+/// Priority:
+///   1. Device operator token from ~/.openclaw/identity/device-auth.json (has full scopes)
+///   2. Shared gateway token from ~/.openclaw/openclaw.json (may lack scopes on 2026.3.12+)
 #[tauri::command]
 pub async fn get_gateway_token() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    let config_path = home.join(".openclaw").join("openclaw.json");
 
+    // Try device operator token first (has full operator scopes)
+    let device_auth_path = home.join(".openclaw").join("identity").join("device-auth.json");
+    if device_auth_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&device_auth_path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(token) = json.pointer("/tokens/operator/token").and_then(|v| v.as_str()) {
+                    if !token.is_empty() {
+                        return Ok(token.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to shared gateway token
+    let config_path = home.join(".openclaw").join("openclaw.json");
     if !config_path.exists() {
         return Err(format!("Config not found: {}", config_path.display()));
     }
@@ -96,7 +111,7 @@ pub async fn get_gateway_token() -> Result<String, String> {
     json.pointer("/gateway/auth/token")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "Token not found in config (gateway.auth.token)".to_string())
+        .ok_or_else(|| "Token not found in config".to_string())
 }
 
 /// Update tray status from frontend.
