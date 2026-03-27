@@ -121,6 +121,17 @@ export const MainWindow: React.FC = () => {
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
 
+    async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
+      try {
+        const result = await getGatewayToken();
+        console.log("[Wallpaper] Got tokens - gateway:", result.gatewayToken ? `${result.gatewayToken.substring(0, 8)}...` : "none", "device:", result.deviceToken ? `${result.deviceToken.substring(0, 8)}...` : "none");
+        return result;
+      } catch (err) {
+        console.warn("[Wallpaper] Failed to get tokens:", err);
+        return {};
+      }
+    }
+
     async function connectToGateway() {
       try {
         console.log("[Wallpaper] Checking OpenClaw status...");
@@ -132,15 +143,9 @@ export const MainWindow: React.FC = () => {
           const url = await getGatewayUrl();
           console.log("[Wallpaper] Gateway URL:", url);
           if (cancelled) return;
-          let token: string | undefined;
-          try {
-            token = await getGatewayToken();
-            console.log("[Wallpaper] Got token:", token ? `${token.substring(0, 8)}...` : "none");
-          } catch (tokenErr) {
-            console.warn("[Wallpaper] Failed to get token:", tokenErr);
-          }
+          const { gatewayToken, deviceToken } = await getTokens();
           console.log("[Wallpaper] Connecting to Gateway...");
-          await connect(url, token);
+          await connect(url, gatewayToken, deviceToken);
           console.log("[Wallpaper] Connect call completed");
         } else {
           console.log("[Wallpaper] OpenClaw not online, staying in offline mode");
@@ -164,9 +169,8 @@ export const MainWindow: React.FC = () => {
           if (online && !cancelled) {
             const url = await getGatewayUrl();
             if (!cancelled) {
-              let token: string | undefined;
-              try { token = await getGatewayToken(); } catch {}
-              await connect(url, token);
+              const { gatewayToken, deviceToken } = await getTokens();
+              await connect(url, gatewayToken, deviceToken);
             }
           }
         } catch {
@@ -196,9 +200,8 @@ export const MainWindow: React.FC = () => {
             const online = await checkOpenClawStatus();
             if (online && connectionStatusRef.current === "disconnected") {
               const url = await getGatewayUrl();
-              let token: string | undefined;
-              try { token = await getGatewayToken(); } catch {}
-              await connect(url, token);
+              const { gatewayToken, deviceToken } = await getTokens();
+              await connect(url, gatewayToken, deviceToken);
             } else if (connectionStatusRef.current === "connected") {
               await refreshSessions();
             }
@@ -217,9 +220,8 @@ export const MainWindow: React.FC = () => {
                 const online = await checkOpenClawStatus();
                 if (online) {
                   const url = await getGatewayUrl();
-                  let token: string | undefined;
-                  try { token = await getGatewayToken(); } catch {}
-                  await connect(url, token);
+                  const { gatewayToken, deviceToken } = await getTokens();
+                  await connect(url, gatewayToken, deviceToken);
                 }
               } catch {
                 // Ignore

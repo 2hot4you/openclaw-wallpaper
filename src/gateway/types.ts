@@ -88,7 +88,7 @@ export interface ConnectParams {
   caps: string[];
   commands: string[];
   permissions: Record<string, unknown>;
-  auth: { token: string };
+  auth: { token?: string; deviceToken?: string };
   locale: string;
 }
 

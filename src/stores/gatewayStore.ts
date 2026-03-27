@@ -40,7 +40,7 @@ interface GatewayState {
   gatewayHealth: GatewayHealth | null;
 
   /** Connect to the Gateway WebSocket */
-  connect: (url: string, token?: string) => Promise<void>;
+  connect: (url: string, token?: string, deviceToken?: string) => Promise<void>;
 
   /** Disconnect from the Gateway WebSocket */
   disconnect: () => void;
@@ -63,7 +63,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   // ── connect ────────────────────────────────────────
 
-  connect: async (url: string, token?: string) => {
+  connect: async (url: string, token?: string, deviceToken?: string) => {
     // Tear down previous connection if any
     if (client) {
       client.disconnect();
@@ -127,7 +127,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
     // --- Initiate connection ---
     try {
-      await client.connect(url, token);
+      await client.connect(url, token, deviceToken);
       // Fetch initial data after handshake
       await Promise.all([get().refreshSessions(), get().refreshAgents()]);
     } catch {

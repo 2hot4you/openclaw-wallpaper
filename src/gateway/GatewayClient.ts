@@ -32,6 +32,7 @@ export class GatewayClient {
   private ws: WebSocket | null = null;
   private _url = "";
   private _token = "";
+  private _deviceToken = "";
   private _status: ConnectionStatus = "disconnected";
 
   // ─── RPC bookkeeping ─────────────────────────────────
@@ -81,9 +82,11 @@ export class GatewayClient {
   async connect(
     url: string,
     token?: string,
+    deviceToken?: string,
   ): Promise<ConnectSnapshot | undefined> {
     this._url = url;
     this._token = token ?? "";
+    this._deviceToken = deviceToken ?? "";
     this.shouldReconnect = true;
     this.setStatus("connecting");
 
@@ -240,7 +243,10 @@ export class GatewayClient {
       caps: [],
       commands: [],
       permissions: {},
-      auth: { token: this._token },
+      auth: {
+        token: this._token || undefined,
+        deviceToken: this._deviceToken || undefined,
+      },
       locale: "zh-CN",
     };
 

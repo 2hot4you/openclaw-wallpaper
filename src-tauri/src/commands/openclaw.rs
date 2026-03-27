@@ -73,45 +73,50 @@ pub async fn get_gateway_url() -> Result<String, String> {
     Ok(format!("ws://127.0.0.1:{}", DEFAULT_PORT))
 }
 
-/// Read the Gateway auth token from the OpenClaw config file.
+/// Read auth tokens for Gateway connection.
 ///
-/// Priority:
-///   1. Device operator token from ~/.openclaw/identity/device-auth.json (has full scopes)
-///   2. Shared gateway token from ~/.openclaw/openclaw.json (may lack scopes on 2026.3.12+)
+/// Returns JSON: { "gatewayToken": "...", "deviceToken": "..." }
+/// - gatewayToken: shared token from openclaw.json (for auth.token)
+/// - deviceToken: device operator token from device-auth.json (for auth.deviceToken, preserves scopes)
 #[tauri::command]
 pub async fn get_gateway_token() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let mut gateway_token = String::new();
+    let mut device_token = String::new();
 
-    // Try device operator token first (has full operator scopes)
-    let device_auth_path = home.join(".openclaw").join("identity").join("device-auth.json");
-    if device_auth_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&device_auth_path) {
+    // Read shared gateway token
+    let config_path = home.join(".openclaw").join("openclaw.json");
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(token) = json.pointer("/tokens/operator/token").and_then(|v| v.as_str()) {
-                    if !token.is_empty() {
-                        return Ok(token.to_string());
-                    }
+                if let Some(t) = json.pointer("/gateway/auth/token").and_then(|v| v.as_str()) {
+                    gateway_token = t.to_string();
                 }
             }
         }
     }
 
-    // Fallback to shared gateway token
-    let config_path = home.join(".openclaw").join("openclaw.json");
-    if !config_path.exists() {
-        return Err(format!("Config not found: {}", config_path.display()));
+    // Read device operator token
+    let device_auth_path = home.join(".openclaw").join("identity").join("device-auth.json");
+    if device_auth_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&device_auth_path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(t) = json.pointer("/tokens/operator/token").and_then(|v| v.as_str()) {
+                    device_token = t.to_string();
+                }
+            }
+        }
     }
 
-    let content = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config: {}", e))?;
+    if gateway_token.is_empty() && device_token.is_empty() {
+        return Err("No auth tokens found".to_string());
+    }
 
-    let json: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse config: {}", e))?;
-
-    json.pointer("/gateway/auth/token")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Token not found in config".to_string())
+    // Return as JSON
+    Ok(serde_json::json!({
+        "gatewayToken": gateway_token,
+        "deviceToken": device_token
+    }).to_string())
 }
 
 /// Update tray status from frontend.
