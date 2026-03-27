@@ -8,10 +8,14 @@
  * - Routes click events to the React layer
  *
  * Behavior model:
- * - Main agent ("boss") sits at a fixed seat (largest Y), never walks
- * - Subagents spawn at the entrance, walk to their assigned seat
- * - All agents stay at their seat regardless of status (working/idle/error)
- * - Subagents walk back to the entrance before despawning
+ * - Main agent ("boss"):
+ *   - Working → sits at "Main_work_right" (facing right)
+ *   - Idle → sits at "Main_rest_face" (facing down, on sofa)
+ * - Subagents:
+ *   - Spawn at entrance, walk to assigned seat
+ *   - Stay at seat regardless of status
+ *   - Walk to entrance before despawning
+ *   - "subagent_face#N" seats face down, "subagent_back#N" seats face up
  */
 
 import { AgentSprite, type AgentStatus, type CharacterClickHandler } from "./AgentSprite";
@@ -28,34 +32,40 @@ const ENTRANCE_Y_FRAC = 0.7; // fraction of mapHeight
 /** Main agent session key */
 const MAIN_AGENT_KEY = "agent:main:main";
 
-/** Boss seat index in the tilemap spawns array */
-const BOSS_SEAT_INDEX = 1;
-
-/** Seat index that should never be assigned (no one sits there) */
-const EXCLUDED_SEAT_INDICES = new Set([0]);
-
 /**
  * Y offset applied to seat positions so the character sprite
- * overlaps the chair and looks like they are sitting, not floating.
+ * overlaps the chair and looks like they are sitting.
  * Positive = move sprite downward.
- * Sprite is 48×96 with origin (0.5, 1) — bottom-center.
  */
 const SEAT_Y_OFFSET = 16;
+
+// ── Types ───────────────────────────────────────────────────
+
+interface SeatInfo {
+  name: string;
+  x: number;
+  y: number;
+  facing: string;
+  originalIndex: number;
+}
 
 export class AgentManager {
   private scene: OfficeScene;
   private agents: Map<string, AgentSprite> = new Map();
-  private seatAssignments: Map<string, number> = new Map(); // sessionKey → seat index
+  private seatAssignments: Map<string, number> = new Map(); // sessionKey → subagentSeats index
   private usedSeats: Set<number> = new Set();
   private nextSpriteIndex = 0;
   private clickHandler: CharacterClickHandler | null = null;
 
-  /** Resolved positions (set after scene is ready) */
-  private bossPosition: { x: number; y: number } = { x: 684, y: 753 };
-  private entrancePosition: { x: number; y: number } = { x: ENTRANCE_X, y: 672 };
+  /** Boss positions resolved from tilemap */
+  private bossWorkSeat: SeatInfo | null = null;  // Main_work_right
+  private bossRestSeat: SeatInfo | null = null;   // Main_rest_face (from POIs)
 
-  /** Boss seat index — excluded from subagent assignment */
-  private bossSeatIndex: number | null = null;
+  /** Subagent seats (filtered from spawns, excludes boss seats) */
+  private subagentSeats: SeatInfo[] = [];
+
+  /** Entrance position */
+  private entrancePosition: { x: number; y: number } = { x: ENTRANCE_X, y: 672 };
 
   constructor(scene: OfficeScene) {
     this.scene = scene;
@@ -75,6 +85,24 @@ export class AgentManager {
   }
 
   /**
+   * Get the seat name assigned to an agent (for debug display).
+   */
+  getSeatIndex(sessionKey: string): string | null {
+    if (this.isMainAgent(sessionKey)) {
+      const agent = this.agents.get(sessionKey);
+      if (agent?.status === "working" && this.bossWorkSeat) {
+        return this.bossWorkSeat.name;
+      }
+      return this.bossRestSeat?.name ?? this.bossWorkSeat?.name ?? null;
+    }
+    const idx = this.seatAssignments.get(sessionKey);
+    if (idx !== undefined && idx < this.subagentSeats.length) {
+      return this.subagentSeats[idx].name;
+    }
+    return null;
+  }
+
+  /**
    * Sync agents with current session list from Gateway.
    */
   syncWithSessions(sessions: SessionData[]): void {
@@ -86,10 +114,8 @@ export class AgentManager {
         this.releaseAgent(key);
 
         if (this.isSubagent(key)) {
-          // Subagent: walk to exit, then despawn
           agent.walkThenDespawn(this.entrancePosition.x, this.entrancePosition.y);
         } else {
-          // Main agent or unknown: immediate despawn
           agent.despawn();
         }
       }
@@ -105,8 +131,6 @@ export class AgentManager {
     // ── Add / update characters for current sessions ──
     for (const session of sessions) {
       const existing = this.agents.get(session.key);
-
-      // Skip agents that are walking to exit
       if (existing?.isDespawning) continue;
 
       const status = this.mapSessionStatus(session.status);
@@ -120,37 +144,33 @@ export class AgentManager {
 
       let agent: AgentSprite;
       if (!existing) {
-        // Spawn new agent
         const spawned = this.spawnAgent(session);
         if (!spawned) {
           console.warn("[AgentManager] Failed to spawn for", session.key);
           continue;
         }
         agent = spawned;
-
-        // New agent: assign seat and walk there
-        this.positionAgent(session.key, agent);
       } else {
         agent = existing;
       }
 
-      // Update status — triggers emote + animation change
+      // Update status
+      const prevStatus = agent.status;
       agent.setStatus(status);
+
+      // Position: subagents only move on spawn; boss moves on status change
+      if (!existing) {
+        this.positionAgent(session.key, agent, status);
+      } else if (this.isMainAgent(session.key) && prevStatus !== status) {
+        // Boss switches between work seat and rest seat
+        this.positionAgent(session.key, agent, status);
+      }
     }
 
     console.log(
       "[AgentManager] After sync — total agents:", this.agents.size,
-      "seats used:", this.usedSeats.size,
+      "subagent seats used:", this.usedSeats.size,
     );
-  }
-
-  /**
-   * Get the seat index assigned to an agent (for debug display).
-   * Returns the seat index or null if not assigned.
-   */
-  getSeatIndex(sessionKey: string): number | null {
-    if (this.isMainAgent(sessionKey)) return BOSS_SEAT_INDEX;
-    return this.seatAssignments.get(sessionKey) ?? null;
   }
 
   /**
@@ -177,35 +197,53 @@ export class AgentManager {
 
   // ── Position resolution ───────────────────────────
 
-  /**
-   * Resolve special positions from the tilemap data.
-   */
   private resolvePositions(): void {
-    // Entrance position — left side, 70% down the map
     this.entrancePosition = {
       x: ENTRANCE_X,
       y: this.scene.mapHeight ? this.scene.mapHeight * ENTRANCE_Y_FRAC : 672,
     };
 
-    // Boss position — fixed seat index 1
-    if (BOSS_SEAT_INDEX < this.scene.seatPositions.length) {
-      const bossSeat = this.scene.seatPositions[BOSS_SEAT_INDEX];
-      this.bossPosition = { x: bossSeat.x, y: bossSeat.y + SEAT_Y_OFFSET };
-      this.bossSeatIndex = BOSS_SEAT_INDEX;
-      this.usedSeats.add(BOSS_SEAT_INDEX);
+    // Parse spawns by name
+    for (let i = 0; i < this.scene.seatPositions.length; i++) {
+      const seat = this.scene.seatPositions[i];
+      const info: SeatInfo = {
+        name: seat.seatId,
+        x: seat.x,
+        y: seat.y,
+        facing: seat.facing,
+        originalIndex: i,
+      };
+
+      const nameLower = seat.seatId.toLowerCase();
+
+      if (nameLower.startsWith("main_work")) {
+        this.bossWorkSeat = info;
+      } else if (nameLower.startsWith("subagent_")) {
+        this.subagentSeats.push(info);
+      }
+      // Unknown names are ignored
     }
 
-    // Also exclude seats that should never be assigned
-    for (const idx of EXCLUDED_SEAT_INDICES) {
-      this.usedSeats.add(idx);
+    // Parse POIs for boss rest seat
+    for (const poi of this.scene.poiPositions) {
+      const nameLower = poi.name.toLowerCase();
+      if (nameLower.startsWith("main_rest")) {
+        this.bossRestSeat = {
+          name: poi.name,
+          x: poi.x,
+          y: poi.y,
+          facing: "down", // Main_rest_face → facing the screen
+          originalIndex: -1,
+        };
+      }
     }
 
     console.log(
-      "[AgentManager] Resolved positions — boss:", this.bossPosition,
-      "bossSeatIdx:", this.bossSeatIndex,
+      "[AgentManager] Resolved —",
+      "bossWork:", this.bossWorkSeat?.name, `(${this.bossWorkSeat?.x.toFixed(0)}, ${this.bossWorkSeat?.y.toFixed(0)})`,
+      "bossRest:", this.bossRestSeat?.name, `(${this.bossRestSeat?.x.toFixed(0)}, ${this.bossRestSeat?.y.toFixed(0)})`,
+      "subagentSeats:", this.subagentSeats.map(s => s.name),
       "entrance:", this.entrancePosition,
-      "totalSeats:", this.scene.seatPositions.length,
-      "excluded:", [...EXCLUDED_SEAT_INDICES],
     );
   }
 
@@ -230,11 +268,6 @@ export class AgentManager {
 
   // ── Spawn ─────────────────────────────────────────
 
-  /**
-   * Spawn a new agent character.
-   * - Main agent → spawns at boss seat with pop-in animation
-   * - Subagent → spawns at entrance (visible), will walk to seat
-   */
   private spawnAgent(session: SessionData): AgentSprite | null {
     const displayName =
       session.label ??
@@ -242,21 +275,20 @@ export class AgentManager {
       session.key.split(":").pop() ??
       "agent";
 
-    // Pick a sprite sheet (cycle through available)
     const spriteConfig =
       CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
     this.nextSpriteIndex++;
 
     const isMain = this.isMainAgent(session.key);
-
     let spawnX: number;
     let spawnY: number;
     let spawnVisible: boolean;
 
     if (isMain) {
-      // Boss: spawn directly at boss seat with pop-in
-      spawnX = this.bossPosition.x;
-      spawnY = this.bossPosition.y;
+      // Boss: spawn at rest seat (default idle position) with pop-in
+      const seat = this.bossRestSeat ?? this.bossWorkSeat;
+      spawnX = seat ? seat.x : 415;
+      spawnY = seat ? seat.y + SEAT_Y_OFFSET : 673 + SEAT_Y_OFFSET;
       spawnVisible = false;
     } else {
       // Subagent: spawn at entrance, will walk to seat
@@ -290,58 +322,57 @@ export class AgentManager {
 
   // ── Positioning ───────────────────────────────────
 
-  /**
-   * Position an agent at their assigned seat.
-   * All agents sit at seats — boss at boss seat, subagents at assigned seats.
-   * Agents do NOT move between seats based on status changes.
-   */
-  private positionAgent(sessionKey: string, agent: AgentSprite): void {
+  private positionAgent(
+    sessionKey: string,
+    agent: AgentSprite,
+    status: AgentStatus,
+  ): void {
     if (this.isMainAgent(sessionKey)) {
-      // Boss is already at boss position (spawned there), no movement needed
+      // Boss: switch between work and rest seats based on status
+      if (status === "working" && this.bossWorkSeat) {
+        agent.moveTo(
+          this.bossWorkSeat.x,
+          this.bossWorkSeat.y + SEAT_Y_OFFSET,
+        );
+      } else if (this.bossRestSeat) {
+        agent.moveTo(
+          this.bossRestSeat.x,
+          this.bossRestSeat.y + SEAT_Y_OFFSET,
+        );
+      }
       return;
     }
 
     // Subagent: assign a seat and walk there from entrance
     const seatIdx = this.assignSeat(sessionKey);
-    if (seatIdx !== null && seatIdx < this.scene.seatPositions.length) {
-      const seat = this.scene.seatPositions[seatIdx];
+    if (seatIdx !== null && seatIdx < this.subagentSeats.length) {
+      const seat = this.subagentSeats[seatIdx];
       agent.moveTo(seat.x, seat.y + SEAT_Y_OFFSET);
     }
   }
 
   // ── Seat management ───────────────────────────────
 
-  /**
-   * Assign a seat to a subagent. Returns seat index.
-   * Skips the boss seat.
-   */
   private assignSeat(sessionKey: string): number | null {
-    // Already assigned?
     const existing = this.seatAssignments.get(sessionKey);
     if (existing !== undefined) return existing;
 
-    // Find first free seat (skip boss seat and excluded seats)
-    for (let i = 0; i < this.scene.seatPositions.length; i++) {
-      if (i === this.bossSeatIndex) continue;
-      if (EXCLUDED_SEAT_INDICES.has(i)) continue;
+    for (let i = 0; i < this.subagentSeats.length; i++) {
       if (!this.usedSeats.has(i)) {
         this.seatAssignments.set(sessionKey, i);
         this.usedSeats.add(i);
-        console.log("[AgentManager] Assigned seat", i, "to", sessionKey.substring(0, 30));
+        console.log(
+          "[AgentManager] Assigned seat", this.subagentSeats[i].name,
+          "(idx", i, ") to", sessionKey.substring(0, 30),
+        );
         return i;
       }
     }
 
-    // No free seats — share the last usable seat
-    for (let i = this.scene.seatPositions.length - 1; i >= 0; i--) {
-      if (i !== this.bossSeatIndex && !EXCLUDED_SEAT_INDICES.has(i)) return i;
-    }
-    return null;
+    // No free seats — share the last one
+    return this.subagentSeats.length > 0 ? this.subagentSeats.length - 1 : null;
   }
 
-  /**
-   * Release a seat when agent despawns.
-   */
   private releaseSeat(sessionKey: string): void {
     const idx = this.seatAssignments.get(sessionKey);
     if (idx !== undefined) {
@@ -350,9 +381,6 @@ export class AgentManager {
     }
   }
 
-  /**
-   * Release all resources for a removed agent.
-   */
   private releaseAgent(sessionKey: string): void {
     this.releaseSeat(sessionKey);
   }

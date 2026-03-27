@@ -155,7 +155,6 @@ export class OfficeScene extends Phaser.Scene {
     if (!spawnsLayer) return;
 
     this.seatPositions = spawnsLayer.objects
-      .filter((obj) => obj.name !== "boss") // Skip boss spawn
       .map((obj, index) => {
         const props = obj.properties as
           | Array<{ name: string; value: string }>

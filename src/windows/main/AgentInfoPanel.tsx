@@ -51,13 +51,13 @@ export function setInfoPanelPosition(x: number, y: number): void {
 
 // ── Module-level seat index lookup ───────────────────────────
 
-let _seatIndexLookup: ((sessionKey: string) => number | null) | null = null;
+let _seatIndexLookup: ((sessionKey: string) => string | null) | null = null;
 
 /**
- * Register a function that returns the seat index for a given session key.
+ * Register a function that returns the seat name for a given session key.
  * Called once from MainWindow after GameManager is ready.
  */
-export function setSeatIndexLookup(fn: ((sessionKey: string) => number | null) | null): void {
+export function setSeatIndexLookup(fn: ((sessionKey: string) => string | null) | null): void {
   _seatIndexLookup = fn;
 }
 
@@ -266,12 +266,12 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
           🕐 {formatRelativeTime(session.updatedAt)}
         </div>
 
-        {/* Debug: seat index */}
+        {/* Debug: seat name */}
         {(() => {
-          const seatIdx = _seatIndexLookup?.(session.key);
-          return seatIdx !== null && seatIdx !== undefined ? (
+          const seatName = _seatIndexLookup?.(session.key);
+          return seatName ? (
             <div style={{ color: "#b07030", fontSize: 7, marginTop: 3 }}>
-              💺 Seat #{seatIdx}
+              💺 {seatName}
             </div>
           ) : null;
         })()}

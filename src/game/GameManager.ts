@@ -167,9 +167,9 @@ export class GameManager {
   }
 
   /**
-   * Get seat index for a given session key (debug helper).
+   * Get seat name for a given session key (debug helper).
    */
-  getSeatIndex(sessionKey: string): number | null {
+  getSeatIndex(sessionKey: string): string | null {
     return this.agentManager?.getSeatIndex(sessionKey) ?? null;
   }
 
