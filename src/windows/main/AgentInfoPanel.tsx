@@ -38,15 +38,39 @@ function getStatusDisplay(status: string | undefined): {
 
 // ── Module-level position storage ────────────────────────────
 
-const _panelPosition = { x: 0, y: 0 };
+/** World coordinates of the selected character (survives resize) */
+const _selectedWorldPos = { x: 0, y: 0 };
+
+/** Function to convert world coords → screen coords (set by MainWindow) */
+let _worldToScreen: ((wx: number, wy: number) => { x: number; y: number }) | null = null;
 
 /**
- * Set the screen position where the info panel should appear.
+ * Set the world position of the selected character.
  * Called from the Phaser click handler before selecting a character.
  */
-export function setInfoPanelPosition(x: number, y: number): void {
-  _panelPosition.x = x;
-  _panelPosition.y = y;
+export function setInfoPanelPosition(_screenX: number, _screenY: number, worldX?: number, worldY?: number): void {
+  if (worldX !== undefined && worldY !== undefined) {
+    _selectedWorldPos.x = worldX;
+    _selectedWorldPos.y = worldY;
+  }
+}
+
+/**
+ * Register a world→screen coordinate converter.
+ * Called once from MainWindow after GameManager is ready.
+ */
+export function setWorldToScreenFn(fn: ((wx: number, wy: number) => { x: number; y: number }) | null): void {
+  _worldToScreen = fn;
+}
+
+/**
+ * Get current screen position from world coordinates.
+ */
+function getScreenPosition(): { x: number; y: number } {
+  if (_worldToScreen) {
+    return _worldToScreen(_selectedWorldPos.x, _selectedWorldPos.y);
+  }
+  return { x: 0, y: 0 };
 }
 
 // ── Module-level seat index lookup ───────────────────────────
@@ -119,9 +143,10 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
   const displayName =
     session.label ?? agent?.name ?? `Agent ${session.key.slice(0, 8)}`;
 
-  // ── Position calculation ──────────────────────────
-  const charX = _panelPosition.x;
-  const charY = _panelPosition.y;
+  // ── Position calculation (real-time from world coords) ──
+  const screenPos = getScreenPosition();
+  const charX = screenPos.x;
+  const charY = screenPos.y;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 

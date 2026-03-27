@@ -85,9 +85,17 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         status?: string;
       } | null;
       if (p?.sessionKey && p?.status) {
-        // Optimistic update of a single session's status
+        // Optimistic update of a single session's status.
+        // Mark active statuses with an expiry so poll doesn't immediately override.
+        const isActive = p.status === "active" || p.status === "running" || p.status === "busy";
         const sessions = get().sessions.map((s) =>
-          s.key === p.sessionKey ? { ...s, status: p.status } : s,
+          s.key === p.sessionKey
+            ? {
+                ...s,
+                status: p.status,
+                _optimisticUntil: isActive ? Date.now() + 10_000 : undefined,
+              }
+            : s,
         );
         const characters = mapSessionsToAgents(sessions, get().agents);
         set({ sessions, characters });
@@ -159,8 +167,34 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     try {
       const raw = await client.call<unknown>("sessions.list");
       console.log("[gatewayStore] sessions.list raw response:", JSON.stringify(raw)?.substring(0, 500));
-      const sessions = Array.isArray(raw) ? raw : (raw as Record<string, unknown>)?.sessions as SessionData[] ?? [];
+      let sessions = Array.isArray(raw) ? raw : (raw as Record<string, unknown>)?.sessions as SessionData[] ?? [];
       console.log("[gatewayStore] Parsed sessions count:", sessions.length);
+
+      // Preserve optimistic "running/active" status for sessions that were
+      // recently updated via chat events — the poll may lag behind real-time.
+      const now = Date.now();
+      const currentSessions = get().sessions;
+      const optimisticMap = new Map<string, SessionData>();
+      for (const s of currentSessions) {
+        if (
+          (s.status === "active" || s.status === "running" || s.status === "busy") &&
+          s._optimisticUntil && now < s._optimisticUntil
+        ) {
+          optimisticMap.set(s.key, s);
+        }
+      }
+
+      if (optimisticMap.size > 0) {
+        sessions = sessions.map((s: SessionData) => {
+          const opt = optimisticMap.get(s.key);
+          if (opt) {
+            // Keep the optimistic active status, but update other fields
+            return { ...s, status: opt.status, _optimisticUntil: opt._optimisticUntil };
+          }
+          return s;
+        });
+      }
+
       const characters = mapSessionsToAgents(sessions, get().agents);
       set({ sessions, characters });
     } catch (err) {

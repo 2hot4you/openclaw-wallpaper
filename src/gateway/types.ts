@@ -52,6 +52,8 @@ export interface SessionData {
   totalTokens?: number;
   createdAt?: number;
   parentKey?: string;
+  /** Internal: timestamp until which an optimistic "active" status is preserved */
+  _optimisticUntil?: number;
 }
 
 // ─── Agent Data ──────────────────────────────────────────────

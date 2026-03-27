@@ -9,7 +9,7 @@ import {
   stopOpenClaw,
   updateTrayStatus,
 } from "../../utils/tauri-ipc";
-import { AgentInfoPanelWithPosition, setInfoPanelPosition, setSeatIndexLookup } from "./AgentInfoPanel";
+import { AgentInfoPanelWithPosition, setInfoPanelPosition, setSeatIndexLookup, setWorldToScreenFn } from "./AgentInfoPanel";
 import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load GameManager to isolate Phaser init
@@ -53,8 +53,8 @@ export const MainWindow: React.FC = () => {
 
   // Handle character click from Phaser
   const handleCharacterClick = useCallback(
-    (id: string, screenX: number, screenY: number, _worldX: number, _worldY: number) => {
-      setInfoPanelPosition(screenX, screenY);
+    (id: string, screenX: number, screenY: number, worldX: number, worldY: number) => {
+      setInfoPanelPosition(screenX, screenY, worldX, worldY);
       setSelectedCharacterId(id);
     },
     [setSelectedCharacterId],
@@ -90,6 +90,17 @@ export const MainWindow: React.FC = () => {
         // Register seat index lookup for debug info panel
         setSeatIndexLookup((key) => gm.getSeatIndex(key));
 
+        // Register world→screen converter for info panel positioning
+        setWorldToScreenFn((wx, wy) => {
+          const scene = gm.getScene();
+          if (!scene) return { x: 0, y: 0 };
+          const cam = scene.cameras.main;
+          return {
+            x: (wx - cam.scrollX) * cam.zoom,
+            y: (wy - cam.scrollY) * cam.zoom,
+          };
+        });
+
         // Start in offline mode until Gateway connects
         gm.setOnlineMode(false);
         gm.setStatusText("🦞 OpenClaw Wallpaper");
@@ -113,6 +124,7 @@ export const MainWindow: React.FC = () => {
         gameManagerRef.current.destroy();
         gameManagerRef.current = null;
         setSeatIndexLookup(null);
+        setWorldToScreenFn(null);
       }
     };
   }, [handleCharacterClick]);
