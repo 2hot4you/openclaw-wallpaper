@@ -68,6 +68,8 @@ export class InfoBubble {
   private bg: Phaser.GameObjects.Graphics;
   private texts: Phaser.GameObjects.Text[] = [];
   private _visible = false;
+  private _dismissable = false;
+  private _dismissTimer: ReturnType<typeof setTimeout> | null = null;
   private targetId: string | null = null;
 
   /** Callback when bubble is dismissed */
@@ -79,9 +81,9 @@ export class InfoBubble {
     this.bg = scene.add.graphics();
     this.container.add(this.bg);
 
-    // Click anywhere else to dismiss
+    // Click anywhere else to dismiss (with guard to prevent same-frame close)
     scene.input.on("pointerdown", (_pointer: Phaser.Input.Pointer, gameObjects: Phaser.GameObjects.GameObject[]) => {
-      if (!this._visible) return;
+      if (!this._visible || !this._dismissable) return;
       // If clicked on the bubble container's children, don't dismiss
       const clickedBubble = gameObjects.some((obj) => this.container.getAll().includes(obj));
       if (!clickedBubble) {
@@ -202,6 +204,9 @@ export class InfoBubble {
     }
 
     this._visible = true;
+    this._dismissable = false;
+    if (this._dismissTimer) clearTimeout(this._dismissTimer);
+    this._dismissTimer = setTimeout(() => { this._dismissable = true; }, 200);
     this.container.setVisible(true);
 
     // Pop-in animation
@@ -223,6 +228,8 @@ export class InfoBubble {
   hide(): void {
     if (!this._visible) return;
     this._visible = false;
+    this._dismissable = false;
+    if (this._dismissTimer) { clearTimeout(this._dismissTimer); this._dismissTimer = null; }
     this.targetId = null;
 
     this.scene.tweens.add({
