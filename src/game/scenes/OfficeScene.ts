@@ -105,6 +105,9 @@ export class OfficeScene extends Phaser.Scene {
     // ── Parse spawns & POIs ─────────────────────────
     this.parseSpawns(map);
     this.parsePOIs(map);
+    console.log("[OfficeScene] Seats:", this.seatPositions.length, this.seatPositions);
+    console.log("[OfficeScene] POIs:", this.poiPositions.length, this.poiPositions);
+    console.log("[OfficeScene] Map size:", this.mapWidth, "x", this.mapHeight);
 
     // ── Character layer ─────────────────────────────
     this.characterLayer = this.add.group();
