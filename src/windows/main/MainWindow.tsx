@@ -53,8 +53,8 @@ export const MainWindow: React.FC = () => {
 
   // Handle character click from Phaser
   const handleCharacterClick = useCallback(
-    (id: string, globalX: number, globalY: number) => {
-      setInfoPanelPosition(globalX, globalY);
+    (id: string, screenX: number, screenY: number, _worldX: number, _worldY: number) => {
+      setInfoPanelPosition(screenX, screenY);
       setSelectedCharacterId(id);
     },
     [setSelectedCharacterId],
@@ -123,8 +123,6 @@ export const MainWindow: React.FC = () => {
 
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
-    let connected = false;
-
     async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
       try {
         const result = await getGatewayToken();
@@ -160,7 +158,7 @@ export const MainWindow: React.FC = () => {
     }
 
     // Initial connection attempt
-    connectToGateway().then(() => { connected = true; }).catch(() => {});
+    connectToGateway().catch(() => {});
 
     // Periodic status check (reconnect if disconnected)
     statusCheckTimer = setInterval(async () => {

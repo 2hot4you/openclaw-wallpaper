@@ -23,8 +23,10 @@ import {
 export type AgentStatus = "idle" | "working" | "error";
 export type CharacterClickHandler = (
   id: string,
-  globalX: number,
-  globalY: number,
+  screenX: number,
+  screenY: number,
+  worldX: number,
+  worldY: number,
 ) => void;
 
 const EMOTE_Y_OFFSET = 0.7; // Fraction of FRAME_HEIGHT above sprite
@@ -77,7 +79,7 @@ export class AgentSprite {
         const cam = scene.cameras.main;
         const screenX = (this.sprite.x - cam.scrollX) * cam.zoom;
         const screenY = (this.sprite.y - cam.scrollY) * cam.zoom;
-        this.clickHandler(this.id, screenX, screenY);
+        this.clickHandler(this.id, screenX, screenY, this.sprite.x, this.sprite.y);
       }
     });
 
@@ -155,11 +157,34 @@ export class AgentSprite {
     return this._isMoving;
   }
 
+  get facing(): Direction {
+    return this._facing;
+  }
+
+  /** World position of the sprite (for info panel positioning) */
+  get worldX(): number {
+    return this.sprite.x;
+  }
+
+  get worldY(): number {
+    return this.sprite.y;
+  }
+
   /**
    * Set click handler for info panel.
    */
   setClickHandler(handler: CharacterClickHandler | null): void {
     this.clickHandler = handler;
+  }
+
+  /**
+   * Set facing direction and play the appropriate idle animation.
+   * Used after arriving at a position to orient the character.
+   */
+  setFacing(direction: Direction): void {
+    if (this._isDespawned || this._isMoving) return;
+    this._facing = direction;
+    this.playStatusAnim();
   }
 
   /**
