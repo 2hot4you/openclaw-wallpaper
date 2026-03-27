@@ -157,8 +157,10 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     if (!client || client.status !== "connected") return;
 
     try {
-      const raw = await client.call<SessionData[]>("sessions.list");
-      const sessions = Array.isArray(raw) ? raw : [];
+      const raw = await client.call<unknown>("sessions.list");
+      console.log("[gatewayStore] sessions.list raw response:", JSON.stringify(raw)?.substring(0, 500));
+      const sessions = Array.isArray(raw) ? raw : (raw as Record<string, unknown>)?.sessions as SessionData[] ?? [];
+      console.log("[gatewayStore] Parsed sessions count:", sessions.length);
       const characters = mapSessionsToAgents(sessions, get().agents);
       set({ sessions, characters });
     } catch (err) {
