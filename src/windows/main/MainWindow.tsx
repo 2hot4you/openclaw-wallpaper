@@ -12,8 +12,8 @@ import {
 import { AgentInfoPanelWithPosition, setInfoPanelPosition } from "./AgentInfoPanel";
 import type { ConnectionStatus } from "../../gateway/types";
 
-// Lazy-load SceneManager to isolate PixiJS init
-let SceneManagerModule: typeof import("../../pixi/engine/SceneManager") | null = null;
+// Lazy-load GameManager to isolate Phaser init
+let GameManagerModule: typeof import("../../game/GameManager") | null = null;
 
 /** Tauri event listener type — simplified to avoid needing full @tauri-apps/api/event import */
 type UnlistenFn = () => void;
@@ -31,10 +31,10 @@ const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
 
 export const MainWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const sceneManagerRef = useRef<InstanceType<NonNullable<typeof SceneManagerModule>["SceneManager"]> | null>(null);
+  const gameManagerRef = useRef<InstanceType<NonNullable<typeof GameManagerModule>["GameManager"]> | null>(null);
   const [status, setStatus] = useState<string>("Starting...");
   const [error, setError] = useState<string | null>(null);
-  const [pixiReady, setPixiReady] = useState(false);
+  const [gameReady, setGameReady] = useState(false);
 
   // Gateway store
   const connect = useGatewayStore((s) => s.connect);
@@ -51,7 +51,7 @@ export const MainWindow: React.FC = () => {
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
   connectionStatusRef.current = connectionStatus;
 
-  // Handle character click from PixiJS
+  // Handle character click from Phaser
   const handleCharacterClick = useCallback(
     (id: string, globalX: number, globalY: number) => {
       setInfoPanelPosition(globalX, globalY);
@@ -60,55 +60,55 @@ export const MainWindow: React.FC = () => {
     [setSelectedCharacterId],
   );
 
-  // ─── PixiJS Initialization ──────────────────────────
+  // ─── Phaser Initialization ──────────────────────────
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     let cancelled = false;
 
-    async function initPixi() {
+    async function initGame() {
       try {
-        console.log("[Wallpaper] Loading PixiJS module...");
-        setStatus("Loading PixiJS module...");
-        SceneManagerModule = await import("../../pixi/engine/SceneManager");
+        console.log("[Wallpaper] Loading Phaser module...");
+        setStatus("Loading Phaser module...");
+        GameManagerModule = await import("../../game/GameManager");
         if (cancelled) return;
 
-        console.log("[Wallpaper] Creating SceneManager...");
-        setStatus("Creating SceneManager...");
-        const sm = new SceneManagerModule.SceneManager();
-        sceneManagerRef.current = sm;
+        console.log("[Wallpaper] Creating GameManager...");
+        setStatus("Creating GameManager...");
+        const gm = new GameManagerModule.GameManager();
+        gameManagerRef.current = gm;
 
-        console.log("[Wallpaper] Initializing renderer...");
-        setStatus("Initializing renderer...");
-        await sm.init(containerRef.current!);
+        console.log("[Wallpaper] Initializing Phaser game...");
+        setStatus("Initializing Phaser game...");
+        await gm.init(containerRef.current!);
         if (cancelled) return;
 
         // Register character click handler
-        sm.onCharacterClick(handleCharacterClick);
+        gm.onCharacterClick(handleCharacterClick);
 
         // Start in offline mode until Gateway connects
-        sm.setOnlineMode(false);
-        sm.setStatusText("🦞 OpenClaw Wallpaper");
+        gm.setOnlineMode(false);
+        gm.setStatusText("🦞 OpenClaw Wallpaper");
 
-        console.log("[Wallpaper] PixiJS ready, setting pixiReady=true");
+        console.log("[Wallpaper] Phaser ready, setting gameReady=true");
         setStatus("Running");
-        setPixiReady(true);
+        setGameReady(true);
       } catch (err) {
         if (cancelled) return;
-        console.error("[Wallpaper] PixiJS init error:", err);
+        console.error("[Wallpaper] Phaser init error:", err);
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
       }
     }
 
-    initPixi();
+    initGame();
 
     return () => {
       cancelled = true;
-      if (sceneManagerRef.current) {
-        sceneManagerRef.current.destroy();
-        sceneManagerRef.current = null;
+      if (gameManagerRef.current) {
+        gameManagerRef.current.destroy();
+        gameManagerRef.current = null;
       }
     };
   }, [handleCharacterClick]);
@@ -116,7 +116,7 @@ export const MainWindow: React.FC = () => {
   // ─── Gateway Connection ─────────────────────────────
 
   useEffect(() => {
-    console.log("[Wallpaper] Gateway useEffect triggered, pixiReady:", pixiReady);
+    console.log("[Wallpaper] Gateway useEffect triggered, gameReady:", gameReady);
 
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -184,12 +184,20 @@ export const MainWindow: React.FC = () => {
       if (statusCheckTimer) clearInterval(statusCheckTimer);
       disconnect();
     };
-  }, [pixiReady, connect, disconnect]);
+  }, [gameReady, connect, disconnect]);
 
   // ─── Tray Events ────────────────────────────────────
 
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
+
+    async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
+      try {
+        return await getGatewayToken();
+      } catch {
+        return {};
+      }
+    }
 
     async function setupTrayListeners() {
       try {
@@ -259,45 +267,39 @@ export const MainWindow: React.FC = () => {
   // ─── Sync connection status → scene + tray ──────────
 
   useEffect(() => {
-    const sm = sceneManagerRef.current;
-    if (!sm) return;
+    const gm = gameManagerRef.current;
+    if (!gm) return;
 
     const isOnline = connectionStatus === "connected";
-    sm.setOnlineMode(isOnline);
+    gm.setOnlineMode(isOnline);
     setOpenclawOnline(isOnline);
 
-    // Update UI overlay
-    const scene = sm.getScene();
-    if (scene) {
-      const uiOverlay = scene.getUIOverlayLayer();
-      uiOverlay.setConnectionStatus(connectionStatus);
-    }
+    // Update connection status on status bar
+    gm.setConnectionStatus(connectionStatus);
 
     // Update status text
     if (isOnline) {
-      sm.setStatusText("🦞 OpenClaw Wallpaper");
+      gm.setStatusText("🦞 OpenClaw Wallpaper");
     } else {
-      sm.setStatusText(`🦞 OpenClaw Wallpaper — ${CONNECTION_LABELS[connectionStatus]}`);
+      gm.setStatusText(`🦞 OpenClaw Wallpaper — ${CONNECTION_LABELS[connectionStatus]}`);
     }
 
     // Update tray status (fire and forget)
     updateTrayStatus(isOnline).catch(() => {});
   }, [connectionStatus, setOpenclawOnline]);
 
-  // ─── Mock sessions for offline/demo mode ─────────────
-
   // ─── Sync sessions → characters ─────────────────────
 
   useEffect(() => {
-    const sm = sceneManagerRef.current;
-    if (!sm) return;
+    const gm = gameManagerRef.current;
+    if (!gm) return;
 
-    const charManager = sm.getCharacterManager();
+    const charManager = gm.getCharacterManager();
     if (charManager) {
       console.log("[Wallpaper] Syncing characters with sessions:", sessions.length, "sessions");
       charManager.syncWithSessions(sessions);
     }
-  }, [sessions, connectionStatus, pixiReady]);
+  }, [sessions, connectionStatus, gameReady]);
 
   return (
     <div
@@ -307,11 +309,11 @@ export const MainWindow: React.FC = () => {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        background: "#5b9bd5",
+        background: "#2a2a3d",
       }}
     >
-      {/* Loading overlay until PixiJS is ready */}
-      {!pixiReady && (
+      {/* Loading overlay until Phaser is ready */}
+      {!gameReady && (
         <div
           style={{
             position: "absolute",
@@ -339,7 +341,7 @@ export const MainWindow: React.FC = () => {
       )}
 
       {/* Agent Info Panel (floating, appears on character click) */}
-      {pixiReady && <AgentInfoPanelWithPosition />}
+      {gameReady && <AgentInfoPanelWithPosition />}
     </div>
   );
 };
