@@ -93,11 +93,17 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
 }
 
 /// Start the OpenClaw Gateway via CLI.
+/// On Windows, uses 'openclaw gateway start' which manages a Scheduled Task service.
+/// The command itself should return quickly — the actual gateway runs as a background service.
 #[tauri::command]
 pub async fn start_openclaw() -> Result<(), String> {
-    openclaw_command()
-        .args(["gateway", "start"])
-        .spawn()
+    let mut cmd = openclaw_command();
+    cmd.args(["gateway", "start"]);
+    // Detach: don't wait for output, don't inherit stdin
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    cmd.spawn()
         .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
     Ok(())
 }
@@ -105,9 +111,12 @@ pub async fn start_openclaw() -> Result<(), String> {
 /// Stop the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    openclaw_command()
-        .args(["gateway", "stop"])
-        .output()
+    let mut cmd = openclaw_command();
+    cmd.args(["gateway", "stop"]);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    cmd.output()
         .map_err(|e| format!("Failed to stop OpenClaw Gateway: {}", e))?;
     Ok(())
 }
@@ -115,9 +124,12 @@ pub async fn stop_openclaw() -> Result<(), String> {
 /// Restart the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    openclaw_command()
-        .args(["gateway", "restart"])
-        .output()
+    let mut cmd = openclaw_command();
+    cmd.args(["gateway", "restart"]);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    cmd.spawn()
         .map_err(|e| format!("Failed to restart OpenClaw Gateway: {}", e))?;
     Ok(())
 }
