@@ -40,22 +40,81 @@ fn find_openclaw_bin() -> String {
 
 /// Create a Command for openclaw with proper shell wrapping on Windows.
 /// Uses CREATE_NO_WINDOW flag to prevent cmd.exe popup.
-fn openclaw_command() -> Command {
+pub fn build_build_openclaw_command() -> Command {
     let bin = find_openclaw_bin();
-    if cfg!(target_os = "windows") && bin.ends_with(".cmd") {
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/C", &bin]);
-        // Hide the console window on Windows
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        // If it's a .cmd file, find the actual node.exe + JS entry point
+        // to avoid cmd.exe window entirely
+        if bin.ends_with(".cmd") {
+            // Try to find node.exe and the openclaw JS entry
+            let node_exe = find_node_exe();
+            let openclaw_js = find_openclaw_js();
+
+            if !node_exe.is_empty() && !openclaw_js.is_empty() {
+                let mut cmd = Command::new(&node_exe);
+                cmd.arg(&openclaw_js);
+                cmd.creation_flags(CREATE_NO_WINDOW);
+                return cmd;
+            }
+
+            // Fallback: use cmd /C with hidden window
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", &bin]);
             cmd.creation_flags(CREATE_NO_WINDOW);
+            return cmd;
         }
+
+        let mut cmd = Command::new(&bin);
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
-    } else {
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
         Command::new(bin)
     }
+}
+
+/// Find node.exe on Windows
+fn find_node_exe() -> String {
+    let candidates = [
+        r"C:\Program Files\nodejs\node.exe",
+    ];
+    for c in &candidates {
+        if std::path::Path::new(c).exists() {
+            return c.to_string();
+        }
+    }
+    // Try PATH
+    if let Ok(output) = Command::new("where").arg("node").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(first_line) = stdout.lines().next() {
+            let p = first_line.trim();
+            if !p.is_empty() && std::path::Path::new(p).exists() {
+                return p.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// Find the openclaw JS entry point on Windows
+fn find_openclaw_js() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let candidates = [
+        home.join("AppData").join("Roaming").join("npm").join("node_modules").join("openclaw").join("dist").join("index.js"),
+    ];
+    for c in &candidates {
+        if c.exists() {
+            return c.to_string_lossy().to_string();
+        }
+    }
+    String::new()
 }
 
 // ─── IPC Commands ───────────────────────────────────────────
@@ -76,7 +135,7 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
     }
 
     // Attempt 2: CLI fallback
-    match openclaw_command()
+    match build_openclaw_command()
         .args(["gateway", "status"])
         .output()
     {
@@ -97,7 +156,7 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
 /// The command itself should return quickly — the actual gateway runs as a background service.
 #[tauri::command]
 pub async fn start_openclaw() -> Result<(), String> {
-    let mut cmd = openclaw_command();
+    let mut cmd = build_openclaw_command();
     cmd.args(["gateway", "start"]);
     // Detach: don't wait for output, don't inherit stdin
     cmd.stdin(std::process::Stdio::null());
@@ -111,7 +170,7 @@ pub async fn start_openclaw() -> Result<(), String> {
 /// Stop the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    let mut cmd = openclaw_command();
+    let mut cmd = build_openclaw_command();
     cmd.args(["gateway", "stop"]);
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::null());
@@ -124,7 +183,7 @@ pub async fn stop_openclaw() -> Result<(), String> {
 /// Restart the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    let mut cmd = openclaw_command();
+    let mut cmd = build_openclaw_command();
     cmd.args(["gateway", "restart"]);
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::null());
