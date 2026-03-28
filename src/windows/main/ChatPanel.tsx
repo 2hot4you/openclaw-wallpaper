@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import Markdown from "react-markdown";
 import { useAppStore } from "../../stores/appStore";
 import { useGatewayStore, type ChatMessage } from "../../stores/gatewayStore";
 import { PIXEL_FONT, COLORS, pixelButton, pixelInput } from "../../styles/pixel-theme";
@@ -308,15 +309,15 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
 
       {/* Bubble */}
       <div
+        className="chat-bubble-md"
         style={{
-          fontFamily: PIXEL_FONT,
+          fontFamily: '"Segoe UI", "Noto Sans SC", sans-serif',
           fontSize: "13px",
-          lineHeight: 1.8,
-          padding: "6px 8px",
-          borderRadius: 4,
+          lineHeight: 1.6,
+          padding: "8px 10px",
+          borderRadius: 6,
           maxWidth: "90%",
           wordBreak: "break-word",
-          whiteSpace: "pre-wrap",
           background: isUser
             ? COLORS.bgPanel
             : isSystem
@@ -326,7 +327,86 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
           border: `1px solid ${isUser ? COLORS.borderDim : COLORS.inputBorder}`,
         }}
       >
-        {truncateContent(message.content)}
+        {isUser ? (
+          <span style={{ whiteSpace: "pre-wrap" }}>{truncateContent(message.content)}</span>
+        ) : (
+          <Markdown
+            components={{
+              p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
+              h1: ({ children }) => <h1 style={{ fontSize: "16px", fontWeight: "bold", margin: "8px 0 4px", color: COLORS.textBright }}>{children}</h1>,
+              h2: ({ children }) => <h2 style={{ fontSize: "15px", fontWeight: "bold", margin: "8px 0 4px", color: COLORS.textBright }}>{children}</h2>,
+              h3: ({ children }) => <h3 style={{ fontSize: "14px", fontWeight: "bold", margin: "6px 0 3px", color: COLORS.textBright }}>{children}</h3>,
+              ul: ({ children }) => <ul style={{ margin: "4px 0", paddingLeft: "16px" }}>{children}</ul>,
+              ol: ({ children }) => <ol style={{ margin: "4px 0", paddingLeft: "16px" }}>{children}</ol>,
+              li: ({ children }) => <li style={{ margin: "2px 0" }}>{children}</li>,
+              strong: ({ children }) => <strong style={{ color: COLORS.textBright, fontWeight: "bold" }}>{children}</strong>,
+              em: ({ children }) => <em style={{ color: COLORS.warning }}>{children}</em>,
+              code: ({ children, className }) => {
+                const isBlock = className?.includes("language-");
+                if (isBlock) {
+                  return (
+                    <pre style={{
+                      background: "rgba(0,0,0,0.4)",
+                      border: `1px solid ${COLORS.borderDim}`,
+                      borderRadius: 4,
+                      padding: "8px",
+                      margin: "6px 0",
+                      overflowX: "auto",
+                      fontSize: "12px",
+                      fontFamily: '"Fira Code", "Consolas", monospace',
+                      lineHeight: 1.4,
+                    }}>
+                      <code style={{ color: COLORS.success }}>{children}</code>
+                    </pre>
+                  );
+                }
+                return (
+                  <code style={{
+                    background: "rgba(0,0,0,0.3)",
+                    padding: "1px 4px",
+                    borderRadius: 3,
+                    fontSize: "12px",
+                    fontFamily: '"Fira Code", "Consolas", monospace',
+                    color: COLORS.warning,
+                  }}>
+                    {children}
+                  </code>
+                );
+              },
+              pre: ({ children }) => <>{children}</>,
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textDecoration: "underline" }}>
+                  {children}
+                </a>
+              ),
+              blockquote: ({ children }) => (
+                <blockquote style={{
+                  borderLeft: `3px solid ${COLORS.warning}`,
+                  margin: "6px 0",
+                  padding: "4px 10px",
+                  background: "rgba(255,255,255,0.03)",
+                  color: COLORS.textDim,
+                }}>
+                  {children}
+                </blockquote>
+              ),
+              hr: () => <hr style={{ border: "none", borderTop: `1px solid ${COLORS.borderDim}`, margin: "8px 0" }} />,
+              table: ({ children }) => (
+                <div style={{ overflowX: "auto", margin: "6px 0" }}>
+                  <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>{children}</table>
+                </div>
+              ),
+              th: ({ children }) => (
+                <th style={{ border: `1px solid ${COLORS.borderDim}`, padding: "4px 8px", background: "rgba(255,255,255,0.05)", fontWeight: "bold", textAlign: "left" }}>{children}</th>
+              ),
+              td: ({ children }) => (
+                <td style={{ border: `1px solid ${COLORS.borderDim}`, padding: "4px 8px" }}>{children}</td>
+              ),
+            }}
+          >
+            {truncateContent(message.content)}
+          </Markdown>
+        )}
       </div>
 
       {/* Model info for assistant messages */}

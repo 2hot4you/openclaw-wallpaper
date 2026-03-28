@@ -6,7 +6,6 @@ const DEFAULT_PORT: u16 = 18789;
 
 /// Windows Scheduled Task name for OpenClaw Gateway.
 #[cfg(target_os = "windows")]
-const GATEWAY_TASK_NAME: &str = "OpenClaw Gateway";
 
 // ─── Helpers ────────────────────────────────────────────────
 
