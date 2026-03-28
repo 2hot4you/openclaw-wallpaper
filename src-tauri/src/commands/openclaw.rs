@@ -72,7 +72,8 @@ pub fn build_openclaw_command() -> Command {
 }
 
 /// Build a command with extra args appended.
-/// PowerShell needs args inside the -Command string, not as separate args.
+/// On Windows: uses `wscript` with a temporary VBS script to run completely hidden.
+/// This is the only reliable way to hide ALL console windows including child processes.
 pub fn build_openclaw_command_with_args(args: &[&str]) -> Command {
     #[cfg(target_os = "windows")]
     {
@@ -82,14 +83,19 @@ pub fn build_openclaw_command_with_args(args: &[&str]) -> Command {
         let bin = find_openclaw_bin();
         let args_str = args.join(" ");
 
-        let mut cmd = Command::new("powershell");
-        cmd.args([
-            "-WindowStyle", "Hidden",
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-Command",
-            &format!("& '{}' {}", bin, args_str),
-        ]);
+        // Create a temporary VBS script that runs the command completely hidden
+        // WScript.Shell.Run with 0 = hidden window, false = don't wait
+        let vbs_content = format!(
+            "Set WshShell = CreateObject(\"WScript.Shell\")\nWshShell.Run \"cmd /c \"\"{}\"\" {}\", 0, False",
+            bin.replace("\\", "\\\\"),
+            args_str
+        );
+
+        let vbs_path = std::env::temp_dir().join("openclaw_wallpaper_cmd.vbs");
+        let _ = std::fs::write(&vbs_path, &vbs_content);
+
+        let mut cmd = Command::new("wscript");
+        cmd.arg(vbs_path.to_string_lossy().to_string());
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
     }
