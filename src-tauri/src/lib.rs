@@ -40,8 +40,7 @@ pub fn run() {
 
                     if !already_running {
                         println!("[OpenClaw Wallpaper] Gateway not running, starting...");
-                        let mut cmd = commands::openclaw::build_openclaw_command();
-                        cmd.args(["gateway", "start"]);
+                        let mut cmd = commands::openclaw::build_openclaw_command_with_args(&["gateway", "start"]);
                         cmd.stdin(std::process::Stdio::null());
                         cmd.stdout(std::process::Stdio::null());
                         cmd.stderr(std::process::Stdio::null());
