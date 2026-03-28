@@ -1,7 +1,54 @@
 use std::process::Command;
+use std::path::PathBuf;
 
 /// Default Gateway HTTP port.
 const DEFAULT_PORT: u16 = 18789;
+
+/// Find the openclaw executable path.
+/// On Windows, npm global installs go to %APPDATA%\npm\openclaw.cmd
+/// On macOS/Linux, it's usually in PATH or ~/.nvm/versions/node/*/bin/openclaw
+fn find_openclaw_bin() -> String {
+    // Try common locations
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        let appdata = std::env::var("APPDATA").unwrap_or_default();
+        let userprofile = std::env::var("USERPROFILE").unwrap_or_default();
+        vec![
+            PathBuf::from(&appdata).join("npm").join("openclaw.cmd"),
+            PathBuf::from(&userprofile).join("AppData").join("Roaming").join("npm").join("openclaw.cmd"),
+            PathBuf::from(r"C:\Program Files\nodejs\openclaw.cmd"),
+            PathBuf::from("openclaw"), // fallback to PATH
+        ]
+    } else {
+        let home = dirs::home_dir().unwrap_or_default();
+        vec![
+            PathBuf::from("/usr/local/bin/openclaw"),
+            PathBuf::from("/opt/homebrew/bin/openclaw"),
+            home.join(".nvm").join("versions").join("node"),  // will need glob, skip
+            PathBuf::from("openclaw"), // fallback to PATH
+        ]
+    };
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.to_string_lossy().to_string();
+        }
+    }
+
+    // Fallback
+    "openclaw".to_string()
+}
+
+/// Create a Command for openclaw with proper shell wrapping on Windows.
+fn openclaw_command() -> Command {
+    let bin = find_openclaw_bin();
+    if cfg!(target_os = "windows") && bin.ends_with(".cmd") {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", &bin]);
+        cmd
+    } else {
+        Command::new(bin)
+    }
+}
 
 // ─── IPC Commands ───────────────────────────────────────────
 
@@ -21,7 +68,7 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
     }
 
     // Attempt 2: CLI fallback
-    match Command::new("openclaw")
+    match openclaw_command()
         .args(["gateway", "status"])
         .output()
     {
@@ -40,7 +87,7 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
 /// Start the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn start_openclaw() -> Result<(), String> {
-    Command::new("openclaw")
+    openclaw_command()
         .args(["gateway", "start"])
         .spawn()
         .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
@@ -50,7 +97,7 @@ pub async fn start_openclaw() -> Result<(), String> {
 /// Stop the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    Command::new("openclaw")
+    openclaw_command()
         .args(["gateway", "stop"])
         .output()
         .map_err(|e| format!("Failed to stop OpenClaw Gateway: {}", e))?;
@@ -60,7 +107,7 @@ pub async fn stop_openclaw() -> Result<(), String> {
 /// Restart the OpenClaw Gateway via CLI.
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    Command::new("openclaw")
+    openclaw_command()
         .args(["gateway", "restart"])
         .output()
         .map_err(|e| format!("Failed to restart OpenClaw Gateway: {}", e))?;
