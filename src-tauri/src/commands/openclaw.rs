@@ -179,42 +179,92 @@ pub async fn check_openclaw_status() -> Result<bool, String> {
     Ok(false)
 }
 
-/// Start the OpenClaw Gateway via CLI.
-/// On Windows, uses 'openclaw gateway start' which manages a Scheduled Task service.
-/// The command itself should return quickly — the actual gateway runs as a background service.
+/// Windows Scheduled Task name for OpenClaw Gateway
+const GATEWAY_TASK_NAME: &str = "OpenClaw Gateway";
+
+/// Start the OpenClaw Gateway via Windows Scheduled Task (no console window).
 #[tauri::command]
 pub async fn start_openclaw() -> Result<(), String> {
-    let mut cmd = build_openclaw_command_with_args(&["gateway", "start"]);
-    cmd.stdin(std::process::Stdio::null());
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::null());
-    cmd.spawn()
-        .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut cmd = Command::new("schtasks");
+        cmd.args(["/Run", "/TN", GATEWAY_TASK_NAME]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        cmd.spawn()
+            .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = build_openclaw_command_with_args(&["gateway", "start"]);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        cmd.spawn()
+            .map_err(|e| format!("Failed to start OpenClaw Gateway: {}", e))?;
+        Ok(())
+    }
 }
 
-/// Stop the OpenClaw Gateway via CLI.
+/// Stop the OpenClaw Gateway.
+/// Sends a shutdown signal via the Gateway's HTTP endpoint, no console window.
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    let mut cmd = build_openclaw_command_with_args(&["gateway", "stop"]);
-    cmd.stdin(std::process::Stdio::null());
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::null());
-    cmd.output()
-        .map_err(|e| format!("Failed to stop OpenClaw Gateway: {}", e))?;
+    // Try graceful shutdown via HTTP first
+    let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
+    match reqwest::Client::new()
+        .post(&url)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(_) => return Ok(()),
+        Err(_) => {}
+    }
+
+    // Fallback: end the scheduled task
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut cmd = Command::new("schtasks");
+        cmd.args(["/End", "/TN", GATEWAY_TASK_NAME]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        let _ = cmd.output();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = build_openclaw_command_with_args(&["gateway", "stop"]);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        let _ = cmd.output();
+    }
+
     Ok(())
 }
 
-/// Restart the OpenClaw Gateway via CLI.
+/// Restart the OpenClaw Gateway via CLI (stop then start).
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    let mut cmd = build_openclaw_command_with_args(&["gateway", "restart"]);
-    cmd.stdin(std::process::Stdio::null());
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::null());
-    cmd.spawn()
-        .map_err(|e| format!("Failed to restart OpenClaw Gateway: {}", e))?;
-    Ok(())
+    // Stop first
+    let _ = stop_openclaw().await;
+    // Wait a moment
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Start
+    start_openclaw().await
 }
 
 /// Return the Gateway WebSocket URL (always local for now).
