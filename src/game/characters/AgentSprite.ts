@@ -87,11 +87,12 @@ export class AgentSprite {
     this.nameTag = scene.add
       .text(x, y + 4, displayName, {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "7px",
+        fontSize: "10px",
         color: "#e0e0e0",
-        backgroundColor: "rgba(0,0,0,0.7)",
-        padding: { x: 3, y: 2 },
+        backgroundColor: "rgba(0,0,0,0.75)",
+        padding: { x: 4, y: 3 },
         align: "center",
+        resolution: 2,
       })
       .setOrigin(0.5, 0)
       .setDepth(20);
