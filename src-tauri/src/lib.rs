@@ -1,14 +1,24 @@
 mod commands;
 mod tray;
+#[cfg(target_os = "windows")]
+mod mouse_hook;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
-        ))
+        ));
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(tauri_plugin_wallpaper::init());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::openclaw::check_openclaw_status,
             commands::openclaw::start_openclaw,
@@ -27,10 +37,8 @@ pub fn run() {
 
             // Auto-start Gateway on app launch (in background)
             std::thread::spawn(|| {
-                // Small delay to let the app window init first
                 std::thread::sleep(std::time::Duration::from_secs(2));
 
-                // Check if gateway is already running via health endpoint
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build();

@@ -2481,7 +2481,9 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-autostart",
  "tauri-plugin-opener",
+ "tauri-plugin-wallpaper",
  "tokio",
+ "windows",
 ]
 
 [[package]]
@@ -4145,6 +4147,19 @@ dependencies = [
  "url",
  "windows",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-wallpaper"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4a6a40fadb7ddf9d821cc28f4f8c43ab8a8e8d0cd0cad4837a8bf83098e3b2f"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+ "windows",
 ]
 
 [[package]]
