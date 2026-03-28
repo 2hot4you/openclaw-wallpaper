@@ -11,6 +11,7 @@ use tauri_plugin_autostart::ManagerExt;
 pub struct TrayState {
     pub is_online: AtomicBool,
     pub autostart_enabled: AtomicBool,
+    pub wallpaper_attached: AtomicBool,
 }
 
 impl Default for TrayState {
@@ -18,6 +19,7 @@ impl Default for TrayState {
         Self {
             is_online: AtomicBool::new(false),
             autostart_enabled: AtomicBool::new(false),
+            wallpaper_attached: AtomicBool::new(false),
         }
     }
 }
@@ -36,7 +38,7 @@ pub fn create_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .autostart_enabled
         .store(autostart_enabled, Ordering::Relaxed);
 
-    build_tray_menu(app.handle(), false, autostart_enabled)?;
+    build_tray_menu(app.handle(), false, autostart_enabled, false)?;
 
     Ok(())
 }
@@ -46,6 +48,7 @@ fn build_tray_menu(
     handle: &AppHandle,
     is_online: bool,
     autostart_enabled: bool,
+    wallpaper_attached: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let title_text = if is_online {
         "🟢 OpenClaw: Running"
@@ -67,6 +70,23 @@ fn build_tray_menu(
     let toggle_openclaw =
         MenuItemBuilder::with_id("toggle_openclaw", toggle_text).build(handle)?;
 
+    // Wallpaper mode toggle (Windows only)
+    #[cfg(target_os = "windows")]
+    let wallpaper_text = if wallpaper_attached {
+        "🖼️ 切换为窗口模式"
+    } else {
+        "🖥️ 切换为壁纸模式"
+    };
+    #[cfg(not(target_os = "windows"))]
+    let wallpaper_text = {
+        let _ = wallpaper_attached;
+        "🖥️ 壁纸模式 (仅 Windows)"
+    };
+
+    let toggle_wallpaper = MenuItemBuilder::with_id("toggle_wallpaper", wallpaper_text)
+        .enabled(cfg!(target_os = "windows"))
+        .build(handle)?;
+
     let autostart = CheckMenuItemBuilder::with_id("autostart", "🚀 开机自启")
         .checked(autostart_enabled)
         .build(handle)?;
@@ -79,6 +99,7 @@ fn build_tray_menu(
         .item(&refresh)
         .item(&toggle_openclaw)
         .separator()
+        .item(&toggle_wallpaper)
         .item(&autostart)
         .separator()
         .item(&quit)
@@ -110,6 +131,9 @@ fn build_tray_menu(
                         let _ = app.emit("tray-start-openclaw", ());
                     }
                 }
+                "toggle_wallpaper" => {
+                    let _ = app.emit("tray-toggle-wallpaper", ());
+                }
                 "autostart" => {
                     let state = app.state::<Arc<TrayState>>();
                     let current = state.autostart_enabled.load(Ordering::Relaxed);
@@ -138,6 +162,17 @@ pub fn update_tray_status(handle: &AppHandle, is_online: bool) {
     if let Some(state) = handle.try_state::<Arc<TrayState>>() {
         state.is_online.store(is_online, Ordering::Relaxed);
         let autostart = state.autostart_enabled.load(Ordering::Relaxed);
-        let _ = build_tray_menu(handle, is_online, autostart);
+        let wallpaper = state.wallpaper_attached.load(Ordering::Relaxed);
+        let _ = build_tray_menu(handle, is_online, autostart, wallpaper);
+    }
+}
+
+/// Update tray menu to reflect wallpaper mode status.
+pub fn update_tray_wallpaper(handle: &AppHandle, attached: bool) {
+    if let Some(state) = handle.try_state::<Arc<TrayState>>() {
+        state.wallpaper_attached.store(attached, Ordering::Relaxed);
+        let online = state.is_online.load(Ordering::Relaxed);
+        let autostart = state.autostart_enabled.load(Ordering::Relaxed);
+        let _ = build_tray_menu(handle, online, autostart, attached);
     }
 }

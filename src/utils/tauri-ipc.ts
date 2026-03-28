@@ -40,3 +40,52 @@ export async function getGatewayToken(): Promise<{ gatewayToken: string; deviceT
 export async function updateTrayStatus(isOnline: boolean): Promise<void> {
   return invoke<void>("update_tray_status", { isOnline });
 }
+
+/** Update tray wallpaper mode status. */
+export async function updateTrayWallpaper(attached: boolean): Promise<void> {
+  return invoke<void>("update_tray_wallpaper", { attached });
+}
+
+// ─── Wallpaper Mode ─────────────────────────────────────────
+
+/** Check if wallpaper mode is supported on this platform (Windows only). */
+export async function isWallpaperSupported(): Promise<boolean> {
+  return invoke<boolean>("is_wallpaper_supported");
+}
+
+/** Attach the main window as desktop wallpaper (behind icons). */
+export async function attachWallpaper(): Promise<void> {
+  return invoke<void>("attach_wallpaper");
+}
+
+/** Detach the main window from wallpaper mode back to normal window. */
+export async function detachWallpaper(): Promise<void> {
+  return invoke<void>("detach_wallpaper");
+}
+
+/**
+ * Toggle wallpaper mode. Handles fullscreen + attach/detach.
+ * Uses the JS API from tauri-plugin-wallpaper for attach/detach
+ * and Tauri window APIs for decorations/size.
+ */
+export async function toggleWallpaperMode(toWallpaper: boolean): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+
+  if (toWallpaper) {
+    // Remove decorations, go fullscreen, then attach
+    await win.setDecorations(false);
+    await win.setFullscreen(true);
+    // Small delay to let fullscreen settle
+    await new Promise((r) => setTimeout(r, 200));
+    await attachWallpaper();
+  } else {
+    // Detach first, then restore window mode
+    await detachWallpaper();
+    await new Promise((r) => setTimeout(r, 200));
+    await win.setFullscreen(false);
+    await win.setDecorations(true);
+    await win.setSize(new (await import("@tauri-apps/api/dpi")).LogicalSize(1280, 720));
+    await win.center();
+  }
+}

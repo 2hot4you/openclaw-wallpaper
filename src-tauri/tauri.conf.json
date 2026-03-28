@@ -18,7 +18,8 @@
         "height": 720,
         "resizable": true,
         "fullscreen": false,
-        "visible": true
+        "visible": true,
+        "transparent": true
       }
     ],
     "security": {

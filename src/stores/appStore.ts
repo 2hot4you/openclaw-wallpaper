@@ -7,6 +7,10 @@ interface AppState {
   windowMode: WindowMode;
   setWindowMode: (mode: WindowMode) => void;
 
+  /** Whether wallpaper mode is supported on this platform */
+  wallpaperSupported: boolean;
+  setWallpaperSupported: (supported: boolean) => void;
+
   /** Whether the wallpaper is attached to the desktop (Windows only) */
   isWallpaperAttached: boolean;
   setWallpaperAttached: (attached: boolean) => void;
@@ -34,6 +38,9 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   windowMode: "window",
   setWindowMode: (mode) => set({ windowMode: mode }),
+
+  wallpaperSupported: false,
+  setWallpaperSupported: (supported) => set({ wallpaperSupported: supported }),
 
   isWallpaperAttached: false,
   setWallpaperAttached: (attached) =>

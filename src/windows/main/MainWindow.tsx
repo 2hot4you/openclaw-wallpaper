@@ -8,6 +8,9 @@ import {
   startOpenClaw,
   stopOpenClaw,
   updateTrayStatus,
+  updateTrayWallpaper,
+  isWallpaperSupported,
+  toggleWallpaperMode,
 } from "../../utils/tauri-ipc";
 import { ChatPanel } from "./ChatPanel";
 import { SettingsModal } from "./SettingsModal";
@@ -52,6 +55,7 @@ export const MainWindow: React.FC = () => {
   const setChatSessionKey = useAppStore((s) => s.setChatSessionKey);
   const chatPanelOpen = useAppStore((s) => s.chatPanelOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
+  const setWallpaperSupported = useAppStore((s) => s.setWallpaperSupported);
 
   // Track connection status for scene sync
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
@@ -127,6 +131,14 @@ export const MainWindow: React.FC = () => {
       }
     };
   }, [handleCharacterClick, handlePOIClick]);
+
+  // ─── Check Wallpaper Support ────────────────────────
+
+  useEffect(() => {
+    isWallpaperSupported()
+      .then((supported) => setWallpaperSupported(supported))
+      .catch(() => setWallpaperSupported(false));
+  }, [setWallpaperSupported]);
 
   // ─── Gateway Connection ─────────────────────────────
 
@@ -234,6 +246,21 @@ export const MainWindow: React.FC = () => {
           try { await stopOpenClaw(); disconnect(); } catch { /* Ignore */ }
         });
         unlisteners.push(u3);
+
+        const u4 = await listen("tray-toggle-wallpaper", async () => {
+          try {
+            const currentMode = useAppStore.getState().windowMode;
+            const toWallpaper = currentMode !== "wallpaper";
+            await toggleWallpaperMode(toWallpaper);
+            const newMode = toWallpaper ? "wallpaper" : "window";
+            useAppStore.getState().setWindowMode(newMode);
+            useAppStore.getState().setWallpaperAttached(toWallpaper);
+            await updateTrayWallpaper(toWallpaper);
+          } catch (err) {
+            console.error("[Wallpaper] Toggle wallpaper mode failed:", err);
+          }
+        });
+        unlisteners.push(u4);
       } catch { /* Tauri event system not available */ }
     }
 

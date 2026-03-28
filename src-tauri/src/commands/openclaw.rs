@@ -5,7 +5,7 @@ use std::path::PathBuf;
 const DEFAULT_PORT: u16 = 18789;
 
 /// Windows Scheduled Task name for OpenClaw Gateway.
-#[cfg(target_os = "windows")]
+// (reserved for future use)
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -67,10 +67,9 @@ fn run_hidden(program: &str, args: &str) -> Result<(), String> {
 
 /// Run openclaw CLI with args, completely hidden on Windows.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
-    let args_str = args.join(" ");
-
     #[cfg(target_os = "windows")]
     {
+        let args_str = args.join(" ");
         let bin = find_openclaw_bin();
         return run_hidden(&bin, &args_str);
     }
@@ -173,5 +172,12 @@ pub async fn get_gateway_token() -> Result<String, String> {
 #[tauri::command]
 pub async fn update_tray_status(app: tauri::AppHandle, is_online: bool) -> Result<(), String> {
     crate::tray::update_tray_status(&app, is_online);
+    Ok(())
+}
+
+/// Update tray wallpaper mode status from frontend.
+#[tauri::command]
+pub async fn update_tray_wallpaper(app: tauri::AppHandle, attached: bool) -> Result<(), String> {
+    crate::tray::update_tray_wallpaper(&app, attached);
     Ok(())
 }

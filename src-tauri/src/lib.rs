@@ -3,12 +3,21 @@ mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
-        ))
+        ));
+
+    // Register wallpaper plugin only on Windows
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(tauri_plugin_wallpaper::init());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::openclaw::check_openclaw_status,
             commands::openclaw::start_openclaw,
@@ -17,6 +26,10 @@ pub fn run() {
             commands::openclaw::get_gateway_url,
             commands::openclaw::get_gateway_token,
             commands::openclaw::update_tray_status,
+            commands::openclaw::update_tray_wallpaper,
+            commands::wallpaper::attach_wallpaper,
+            commands::wallpaper::detach_wallpaper,
+            commands::wallpaper::is_wallpaper_supported,
         ])
         .setup(|app| {
             tray::create_tray(app)?;
