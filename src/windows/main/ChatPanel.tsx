@@ -67,9 +67,19 @@ export const ChatPanel: React.FC = () => {
     return () => { cancelled = true; };
   }, [chatPanelOpen, chatSessionKey, connectionStatus, fetchChatHistory]);
 
-  // Auto-scroll to bottom
+  // Track whether user is at the bottom of the scroll
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const el = scrollRef.current;
+    // Consider "at bottom" if within 40px of the end
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }, []);
+
+  // Auto-scroll to bottom only if user was already at the bottom
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && isAtBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
@@ -189,6 +199,7 @@ export const ChatPanel: React.FC = () => {
       {/* Messages */}
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         style={{
           flex: 1,
           overflowY: "auto",
