@@ -1,9 +1,72 @@
 # OpenClaw Wallpaper — MVP PRD
 
-> 版本：v0.1  
+> 版本：v0.2  
 > 作者：PM  
-> 日期：2026-03-27  
-> 状态：Draft
+> 日期：2026-03-27（实现状态更新：2026-03-29）  
+> 状态：MVP 实现完成
+
+---
+
+## 当前实现状态
+
+> 截至 2026-03-29，以下为各功能模块的实际完成情况。
+
+### 技术选型变更
+
+| 原计划 | 实际采用 | 原因 |
+|--------|----------|------|
+| PixiJS v8 | **Phaser 3** | Phaser 提供完整的场景管理、tilemap 支持、spritesheet 动画、tween 系统，开发效率更高 |
+| 32×32 基础 tile | **48×48 基础 tile** | 使用 Agent Town 素材包，原生 48×48 像素密度 |
+| 角色 32×48 px | **角色 48×96 px** | 匹配 Agent Town 预制角色 spritesheet 规格 |
+| 调色板交换（Palette Swap） | **7 套独立预制角色** | Agent Town 提供多套预制角色，无需运行时换色 |
+| 前端框架待定 | **React 19** | — |
+
+### P0 功能实现状态
+
+| ID | 功能 | 状态 | 实现说明 |
+|----|------|------|----------|
+| F-01 | 壁纸嵌入 | ⏳ 待集成 | tauri-plugin-wallpaper 未集成，当前仅窗口模式。壁纸嵌入逻辑不在 MVP 首版范围 |
+| F-02 | 像素风场景渲染 | ✅ 完成 | Phaser 3 + Tiled tilemap（office2.json），多层渲染：floor/walls/ground/furniture/objects/props/overhead |
+| F-03 | Agent 角色显示 | ✅ 完成 | AgentManager 管理角色生命周期，Session→角色自动同步，7 套预制角色 spritesheet |
+| F-04 | Agent 状态动画 | ✅ 完成 | 空闲（idle 动画）、工作中（快速 idle + 微浮动）、错误（红色闪烁）、Emote 气泡（⚡💤❌） |
+| F-05 | OpenClaw 状态检测 | ✅ 完成 | Rust 侧 HTTP 健康检查（127.0.0.1:18789/health），离线时暗色遮罩 + 提示文字 |
+| F-06 | 实时状态同步 | ✅ 完成 | WebSocket JSON-RPC v3 + 3 秒轮询 sessions.list + chat/agent/presence 事件监听 |
+| F-07 | 系统托盘 | ✅ 完成 | Rust 原生托盘：启动/停止/重启 Gateway、刷新状态、开机自启（tauri-plugin-autostart） |
+| F-08 | 自适应性能策略 | ⏳ 部分 | 无独立 PerformanceController，依赖 Phaser 默认帧率管理 |
+
+### P1 功能实现状态
+
+| ID | 功能 | 状态 | 实现说明 |
+|----|------|------|----------|
+| F-09 | Agent 信息面板 | ✅ 完成 | 漫画对话气泡风格（React overlay），显示名称、状态、模型、token 用量、更新时间、工位信息 |
+| F-10 | 对话功能 | ✅ 完成 | ChatPanel 右侧滑出面板（非独立窗口），Markdown 渲染、chat.history 拉取、chat.send 发送 |
+| F-11 | OpenClaw 启停控制 | ✅ 完成 | 系统托盘 + 控制面板双入口。Windows 使用 VBS 隐藏执行 `openclaw gateway start/stop/restart` |
+| F-12 | 独立窗口模式 | ✅ 当前默认 | 当前仅窗口模式，壁纸模式待后续集成 |
+| F-13 | 开机自启动 | ✅ 完成 | tauri-plugin-autostart，托盘菜单可切换 |
+| F-14 | 多显示器适配 | — 未实施 | — |
+
+### P2 功能实现状态
+
+| ID | 功能 | 状态 | 实现说明 |
+|----|------|------|----------|
+| F-15 | 对话气泡 | ✅ 完成 | InfoBubble（Phaser 原生世界坐标气泡）+ AgentInfoPanel（React overlay 漫画气泡） |
+| F-16 | 角色行走动画 | ✅ 完成 | Tween 移动 + 四方向行走动画，Subagent 从入口走到工位、离开时走回入口 |
+| F-17 | 场景微动画 | ⏳ 未实施 | — |
+| F-18 | 通知提醒 | ⏳ 未实施 | — |
+| F-19 | 设置面板 | ✅ 完成 | SettingsModal：Gateway 管理标签页（健康/通道状态）、模型标签页、配置标签页 |
+| F-20 | 快捷键支持 | ⏳ 未实施 | — |
+
+### 额外实现（PRD 未计划）
+
+| 功能 | 说明 |
+|------|------|
+| **自动启动 Gateway** | 应用启动时自动检测并启动 Gateway（Rust 后台线程） |
+| **Boss/Subagent 行为模型** | Main agent 固定老板位（工作→工位，空闲→沙发），Subagent 动态分配工位 |
+| **控制面板** | 完整的 SettingsModal：Gateway 健康检查、通道状态、模型列表、配置热重载 |
+| **聊天 Markdown 渲染** | 支持代码块、表格、列表、引用、链接等完整 Markdown 渲染 |
+| **Token + Device Token 认证** | 自动从 `~/.openclaw/` 读取双重认证 token |
+| **Optimistic 状态更新** | 实时事件推送后做 optimistic 更新，防止 3 秒轮询滞后覆盖 |
+| **POI 交互系统** | 场景中的白板等 POI 支持点击触发功能 |
 
 ---
 

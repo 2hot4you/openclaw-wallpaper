@@ -1,10 +1,71 @@
 # OpenClaw Wallpaper — 技术架构设计
 
-> 版本：v0.1  
+> 版本：v0.2  
 > 作者：Architect  
-> 日期：2026-03-27  
-> 状态：Draft  
-> 依据：[PRD v0.1](./prd.md) · [可行性调研](./research/feasibility-report.md)
+> 日期：2026-03-27（实现变更记录：2026-03-29）  
+> 状态：MVP 实现完成  
+> 依据：[PRD v0.2](./prd.md) · [可行性调研](./research/feasibility-report.md)
+
+---
+
+## 实际技术选型变更
+
+> 以下记录开发过程中相对原始架构设计的关键技术变更。
+
+### 核心变更：PixiJS → Phaser 3
+
+| 项目 | 原始设计 | 实际实现 | 变更原因 |
+|------|----------|----------|----------|
+| **2D 渲染引擎** | PixiJS v8 | **Phaser 3.87** | Phaser 提供完整游戏开发框架：tilemap 加载与渲染、spritesheet 动画管理、tween 系统、场景生命周期、摄像机系统——减少手写基础设施代码量 |
+| **Tilemap** | 自行实现分层渲染 | **Phaser Tilemap + Tiled JSON** | Phaser 原生支持 Tiled 格式，自动处理 tileset 映射、多层渲染、object layer 解析 |
+| **角色动画** | AnimatedSprite + 自定义状态机 | **Phaser Sprite + Anims + Tween** | Phaser 内置动画系统（帧动画 + tween 插值），不需要手写 AnimationStateMachine 类 |
+| **性能控制** | 自定义 PerformanceController | **Phaser Scale Manager + 默认帧率** | 暂未实现自适应帧率策略，使用 Phaser 默认行为 |
+
+### 资源规格变更
+
+| 项目 | 原始设计 | 实际实现 |
+|------|----------|----------|
+| Tile 尺寸 | 32×32 px | **48×48 px**（Agent Town 素材原生规格） |
+| 角色尺寸 | 32×48 px | **48×96 px**（Agent Town 预制角色规格） |
+| 颜色差异化 | 调色板交换（Palette Swap）+ shader | **7 套独立预制角色 spritesheet**（每套独立配色） |
+| 素材来源 | 自行绘制或 AI 生成 | **Agent Town 素材包（MIT 授权）** |
+
+### 架构层级变更
+
+| 模块 | 原始设计 | 实际实现 |
+|------|----------|----------|
+| SceneManager | 自定义类管理 PixiJS Application | **GameManager** 管理 Phaser.Game 实例 |
+| BaseScene + WorkshopScene | 自定义场景基类 + 分层 Layer 类 | **BootScene（预加载）+ OfficeScene（主场景）**，Phaser 原生 Scene 管理 |
+| 渲染层级（6 层 Layer 类） | SkyLayer / BackgroundLayer / ... | **Tilemap 多图层 + setDepth()**，无独立 Layer 类 |
+| AgentCharacterManager | 基于 Zustand subscribe 的响应式同步 | **AgentManager**，由 MainWindow useEffect 主动调用 `syncWithSessions()` |
+| AgentCharacter | PixiJS Container + AnimatedSprite | **AgentSprite**，Phaser Sprite + Text + Emote Sprite |
+| AnimationStateMachine | 独立类，枚举状态转换 | **内联在 AgentSprite 中**，通过 `playStatusAnim()` / `setStatus()` 管理 |
+| PaletteSwap | ColorMatrixFilter | **已移除**，使用独立 spritesheet 天然配色 |
+| 对话窗口 | 独立 Tauri 窗口 (WebviewWindowBuilder) | **ChatPanel 侧边栏**（同一窗口内的 React 组件） |
+| 壁纸嵌入 | tauri-plugin-wallpaper 集成 | **未集成**，当前仅窗口模式 |
+
+### Gateway 通信变更
+
+| 项目 | 原始设计 | 实际实现 |
+|------|----------|----------|
+| 协议 | JSON-RPC 2.0（标准格式） | **OpenClaw Gateway 自定义帧格式**（`{type:"req"/"res"/"event", ...}`） |
+| 认证 | 单 token | **Token + Device Token 双重认证**（从 openclaw.json + device-auth.json 读取） |
+| 状态同步 | WebSocket 事件驱动 | **3 秒轮询 sessions.list + 事件推送 + Optimistic 更新** |
+| 握手 | `connect` 方法 | `connect` 方法（协议 v3，含 client/role/scopes/auth/caps） |
+
+### 新增模块（原始设计未包含）
+
+| 模块 | 说明 |
+|------|------|
+| `BootScene` | Phaser 资源预加载场景，支持进度条 |
+| `InfoBubble` | Phaser 原生世界坐标信息气泡（非 React） |
+| `EmoteBubble` | Emote 动画气泡组件 |
+| `StatusBar` | 底部状态栏（连接状态 + 文字） |
+| `POIInteraction` | 场景 POI 点击交互区域 |
+| `SettingsModal` | 控制面板（Gateway/Models/Config 三标签页） |
+| `pixel-theme.ts` | 像素风 UI 主题系统 |
+| VBS 隐藏执行 | Windows 专用：通过 WScript.Shell 隐藏启动 Gateway |
+| 自动启动 Gateway | Rust 侧 setup 钩子，应用启动时自动拉起 Gateway |
 
 ---
 
@@ -2434,18 +2495,23 @@ export class AgentCharacter {
 
 ## 附录 A：技术选型确认清单
 
+> ⚠️ 下表已更新为实际使用的技术栈（2026-03-29）。
+
 | 选项 | 选择 | 版本 | 许可证 |
 |------|------|------|--------|
 | 桌面框架 | Tauri | v2.x | MIT/Apache-2.0 |
-| 壁纸插件 | tauri-plugin-wallpaper | v3.x | MIT |
-| 2D 渲染 | PixiJS | v8.x | MIT |
-| 角色动画 | Spritesheet (AnimatedSprite) | PixiJS 内置 | MIT |
+| 壁纸插件 | ~~tauri-plugin-wallpaper~~ | ~~v3.x~~ | 未集成（MVP 仅窗口模式） |
+| 2D 游戏引擎 | **Phaser** (原计划 PixiJS) | **v3.87** | MIT |
+| 角色动画 | Spritesheet (Phaser Anims + Tween) | Phaser 内置 | MIT |
 | 前端框架 | React | 19.x | MIT |
 | 状态管理 | Zustand | 5.x | MIT |
-| 构建工具 | Vite | 6.x | MIT |
+| 构建工具 | Vite | 7.x | MIT |
 | 包管理 | pnpm | 9.x | MIT |
-| HTTP 客户端 (Rust) | reqwest | latest | MIT/Apache-2.0 |
-| 通信协议 | WebSocket JSON-RPC | — | — |
+| HTTP 客户端 (Rust) | reqwest | 0.12.x | MIT/Apache-2.0 |
+| 通信协议 | OpenClaw Gateway WebSocket (JSON-RPC v3) | — | — |
+| 开机自启 | tauri-plugin-autostart | 2.x | MIT |
+| Markdown 渲染 | react-markdown | 10.x | MIT |
+| 像素素材 | Agent Town | 48×48 | MIT |
 
 ## 附录 B：MVP 不涉及但需预留扩展点
 
