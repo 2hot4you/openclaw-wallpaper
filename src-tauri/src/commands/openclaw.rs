@@ -40,7 +40,7 @@ fn find_openclaw_bin() -> String {
 
 /// Create a Command for openclaw with proper shell wrapping on Windows.
 /// Uses CREATE_NO_WINDOW flag to prevent cmd.exe popup.
-pub fn build_build_openclaw_command() -> Command {
+pub fn build_openclaw_command() -> Command {
     let bin = find_openclaw_bin();
 
     #[cfg(target_os = "windows")]
