@@ -26,9 +26,6 @@ importers:
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.14)(react@19.2.4)
-      tauri-plugin-wallpaper:
-        specifier: ^3.0.0
-        version: 3.0.0(@tauri-apps/api@2.10.1)
       zustand:
         specifier: ^5.0.5
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)
@@ -900,11 +897,6 @@ packages:
 
   style-to-object@1.0.14:
     resolution: {integrity: sha512-LIN7rULI0jBscWQYaSswptyderlarFkjQ+t79nzty8tcIAceVomEVlLzH5VP4Cmsv6MtKhs7qaAiwlcp+Mgaxw==}
-
-  tauri-plugin-wallpaper@3.0.0:
-    resolution: {integrity: sha512-FCRPAa2RUUhlR1PkI+IhwQkbhLKblvGZ89xmLip8eSSezyqhVY8UbxjdBhVEvvAQLtpSPRfjHhLGlBjSn8Hu1Q==}
-    peerDependencies:
-      '@tauri-apps/api': ^2.9.1
 
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
@@ -1917,10 +1909,6 @@ snapshots:
   style-to-object@1.0.14:
     dependencies:
       inline-style-parser: 0.2.7
-
-  tauri-plugin-wallpaper@3.0.0(@tauri-apps/api@2.10.1):
-    dependencies:
-      '@tauri-apps/api': 2.10.1
 
   tinyglobby@0.2.15:
     dependencies:

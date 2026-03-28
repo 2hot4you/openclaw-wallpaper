@@ -118,21 +118,14 @@ fn build_tray_menu(
     let toggle_openclaw =
         MenuItemBuilder::with_id("toggle_openclaw", toggle_text).build(handle)?;
 
-    // Wallpaper mode toggle (Windows only)
-    #[cfg(target_os = "windows")]
+    // Wallpaper mode toggle
     let wallpaper_text = if wallpaper_attached {
         "🖼️ 切换为窗口模式"
     } else {
         "🖥️ 切换为壁纸模式"
     };
-    #[cfg(not(target_os = "windows"))]
-    let wallpaper_text = {
-        let _ = wallpaper_attached;
-        "🖥️ 壁纸模式 (仅 Windows)"
-    };
 
     let toggle_wallpaper = MenuItemBuilder::with_id("toggle_wallpaper", wallpaper_text)
-        .enabled(cfg!(target_os = "windows"))
         .build(handle)?;
 
     let autostart = CheckMenuItemBuilder::with_id("autostart", "🚀 开机自启")
