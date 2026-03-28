@@ -22,6 +22,29 @@ export interface ChatMessage {
   provider?: string;
 }
 
+/** Detailed health info from Gateway */
+export interface GatewayHealthDetail {
+  ok: boolean;
+  ts: number;
+  uptime?: number;
+  durationMs?: number;
+  channels: Record<string, {
+    configured: boolean;
+    running: boolean;
+    lastError: string | null;
+  }>;
+  version?: string;
+}
+
+/** Model info from models.list */
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
 // ─── Singleton client instance ───────────────────────────────
 
 let client: GatewayClient | null = null;
@@ -66,6 +89,21 @@ interface GatewayState {
 
   /** Send a message to a session */
   sendMessage: (sessionKey: string, message: string) => Promise<void>;
+
+  /** Fetch Gateway health info */
+  fetchHealth: () => Promise<GatewayHealthDetail | null>;
+
+  /** Fetch full config */
+  fetchConfig: () => Promise<Record<string, unknown> | null>;
+
+  /** Set a config value by path */
+  setConfig: (path: string, value: unknown) => Promise<boolean>;
+
+  /** Apply config (hot reload) */
+  applyConfig: () => Promise<boolean>;
+
+  /** Fetch available models */
+  fetchModels: () => Promise<ModelInfo[]>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -314,6 +352,76 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     } catch (err) {
       console.warn("[gatewayStore] sendMessage failed:", err);
       throw err;
+    }
+  },
+
+  // ── fetchHealth ────────────────────────────────────
+
+  fetchHealth: async (): Promise<GatewayHealthDetail | null> => {
+    if (!client || client.status !== "connected") return null;
+
+    try {
+      const raw = await client.call<GatewayHealthDetail>("health", {}, 15_000);
+      return raw ?? null;
+    } catch (err) {
+      console.warn("[gatewayStore] fetchHealth failed:", err);
+      return null;
+    }
+  },
+
+  // ── fetchConfig ────────────────────────────────────
+
+  fetchConfig: async (): Promise<Record<string, unknown> | null> => {
+    if (!client || client.status !== "connected") return null;
+
+    try {
+      const raw = await client.call<{ parsed?: Record<string, unknown> }>("config.get", {});
+      return raw?.parsed ?? null;
+    } catch (err) {
+      console.warn("[gatewayStore] fetchConfig failed:", err);
+      return null;
+    }
+  },
+
+  // ── setConfig ──────────────────────────────────────
+
+  setConfig: async (path: string, value: unknown): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("config.set", { path, value });
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] setConfig failed:", err);
+      return false;
+    }
+  },
+
+  // ── applyConfig ────────────────────────────────────
+
+  applyConfig: async (): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("config.apply", {});
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] applyConfig failed:", err);
+      return false;
+    }
+  },
+
+  // ── fetchModels ────────────────────────────────────
+
+  fetchModels: async (): Promise<ModelInfo[]> => {
+    if (!client || client.status !== "connected") return [];
+
+    try {
+      const raw = await client.call<{ models?: ModelInfo[] }>("models.list", {});
+      return raw?.models ?? [];
+    } catch (err) {
+      console.warn("[gatewayStore] fetchModels failed:", err);
+      return [];
     }
   },
 }));
