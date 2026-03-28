@@ -38,18 +38,66 @@ pub fn create_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .autostart_enabled
         .store(autostart_enabled, Ordering::Relaxed);
 
-    build_tray_menu(app.handle(), false, autostart_enabled, false)?;
+    // Build menu
+    let menu = build_tray_menu(app.handle(), false, autostart_enabled, false)?;
+
+    // Create tray icon ONCE — never recreate, only swap menus
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(move |app, event| {
+            let id = event.id();
+            match id.as_ref() {
+                "quit" => {
+                    app.exit(0);
+                }
+                "refresh" => {
+                    let _ = app.emit("tray-refresh-status", ());
+                }
+                "toggle_openclaw" => {
+                    let state = app.state::<Arc<TrayState>>();
+                    let currently_online = state.is_online.load(Ordering::Relaxed);
+                    if currently_online {
+                        let _ = app.emit("tray-stop-openclaw", ());
+                    } else {
+                        let _ = app.emit("tray-start-openclaw", ());
+                    }
+                }
+                "toggle_wallpaper" => {
+                    let _ = app.emit("tray-toggle-wallpaper", ());
+                }
+                "autostart" => {
+                    let state = app.state::<Arc<TrayState>>();
+                    let current = state.autostart_enabled.load(Ordering::Relaxed);
+                    let new_val = !current;
+                    state.autostart_enabled.store(new_val, Ordering::Relaxed);
+
+                    let autostart = app.autolaunch();
+                    if new_val {
+                        let _ = autostart.enable();
+                    } else {
+                        let _ = autostart.disable();
+                    }
+
+                    // Refresh tray menu to update checkbox
+                    refresh_tray_menu(app);
+                }
+                _ => {}
+            }
+        })
+        .build(app.handle())?;
 
     Ok(())
 }
 
-/// Build (or rebuild) the tray menu with current status.
+/// Build a tray menu (returns the Menu, does NOT create/recreate tray icon).
 fn build_tray_menu(
     handle: &AppHandle,
     is_online: bool,
     autostart_enabled: bool,
     wallpaper_attached: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let title_text = if is_online {
         "🟢 OpenClaw: Running"
     } else {
@@ -105,65 +153,30 @@ fn build_tray_menu(
         .item(&quit)
         .build()?;
 
-    // Try to remove existing tray, ignore if not found
-    let _ = handle.remove_tray_by_id("main-tray");
+    Ok(menu)
+}
 
-    TrayIconBuilder::with_id("main-tray")
-        .icon(handle.default_window_icon().unwrap().clone())
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| {
-            let id = event.id();
-            match id.as_ref() {
-                "quit" => {
-                    app.exit(0);
-                }
-                "refresh" => {
-                    // Emit event for frontend to handle refresh
-                    let _ = app.emit("tray-refresh-status", ());
-                }
-                "toggle_openclaw" => {
-                    let state = app.state::<Arc<TrayState>>();
-                    let currently_online = state.is_online.load(Ordering::Relaxed);
-                    if currently_online {
-                        let _ = app.emit("tray-stop-openclaw", ());
-                    } else {
-                        let _ = app.emit("tray-start-openclaw", ());
-                    }
-                }
-                "toggle_wallpaper" => {
-                    let _ = app.emit("tray-toggle-wallpaper", ());
-                }
-                "autostart" => {
-                    let state = app.state::<Arc<TrayState>>();
-                    let current = state.autostart_enabled.load(Ordering::Relaxed);
-                    let new_val = !current;
-                    state.autostart_enabled.store(new_val, Ordering::Relaxed);
+/// Refresh the tray menu (swap menu on existing tray icon, no recreation).
+fn refresh_tray_menu(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<Arc<TrayState>>() else {
+        return;
+    };
+    let is_online = state.is_online.load(Ordering::Relaxed);
+    let autostart = state.autostart_enabled.load(Ordering::Relaxed);
+    let wallpaper = state.wallpaper_attached.load(Ordering::Relaxed);
 
-                    // Toggle autostart via plugin
-                    let autostart = app.autolaunch();
-                    if new_val {
-                        let _ = autostart.enable();
-                    } else {
-                        let _ = autostart.disable();
-                    }
-                }
-                _ => {}
-            }
-        })
-        .build(handle)?;
-
-    Ok(())
+    if let Ok(menu) = build_tray_menu(handle, is_online, autostart, wallpaper) {
+        if let Some(tray) = handle.tray_by_id("main-tray") {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
 }
 
 /// Update tray menu to reflect current Gateway status.
-/// Called from IPC or event handlers.
 pub fn update_tray_status(handle: &AppHandle, is_online: bool) {
     if let Some(state) = handle.try_state::<Arc<TrayState>>() {
         state.is_online.store(is_online, Ordering::Relaxed);
-        let autostart = state.autostart_enabled.load(Ordering::Relaxed);
-        let wallpaper = state.wallpaper_attached.load(Ordering::Relaxed);
-        let _ = build_tray_menu(handle, is_online, autostart, wallpaper);
+        refresh_tray_menu(handle);
     }
 }
 
@@ -171,8 +184,6 @@ pub fn update_tray_status(handle: &AppHandle, is_online: bool) {
 pub fn update_tray_wallpaper(handle: &AppHandle, attached: bool) {
     if let Some(state) = handle.try_state::<Arc<TrayState>>() {
         state.wallpaper_attached.store(attached, Ordering::Relaxed);
-        let online = state.is_online.load(Ordering::Relaxed);
-        let autostart = state.autostart_enabled.load(Ordering::Relaxed);
-        let _ = build_tray_menu(handle, online, autostart, attached);
+        refresh_tray_menu(handle);
     }
 }

@@ -64,28 +64,14 @@ export async function detachWallpaper(): Promise<void> {
 }
 
 /**
- * Toggle wallpaper mode. Handles fullscreen + attach/detach.
- * Uses the JS API from tauri-plugin-wallpaper for attach/detach
- * and Tauri window APIs for decorations/size.
+ * Toggle wallpaper mode.
+ * All window management (fullscreen, decorations, attach/detach) is handled
+ * by the Rust backend IPC commands.
  */
 export async function toggleWallpaperMode(toWallpaper: boolean): Promise<void> {
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  const win = getCurrentWindow();
-
   if (toWallpaper) {
-    // Remove decorations, go fullscreen, then attach
-    await win.setDecorations(false);
-    await win.setFullscreen(true);
-    // Small delay to let fullscreen settle
-    await new Promise((r) => setTimeout(r, 200));
     await attachWallpaper();
   } else {
-    // Detach first, then restore window mode
     await detachWallpaper();
-    await new Promise((r) => setTimeout(r, 200));
-    await win.setFullscreen(false);
-    await win.setDecorations(true);
-    await win.setSize(new (await import("@tauri-apps/api/dpi")).LogicalSize(1280, 720));
-    await win.center();
   }
 }

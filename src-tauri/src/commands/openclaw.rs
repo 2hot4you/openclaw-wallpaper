@@ -36,16 +36,25 @@ fn find_openclaw_bin() -> String {
 
 /// Run a command completely hidden on Windows using a VBS wrapper.
 /// WScript.Shell.Run with windowStyle=0 hides the entire process tree.
+///
+/// For .cmd/.bat files, we wrap with `cmd.exe /c "..."` because
+/// running .cmd directly via WshShell.Run still flashes a CMD window.
 #[cfg(target_os = "windows")]
 fn run_hidden(program: &str, args: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+    // If program is a .cmd or .bat, wrap via cmd.exe /c to avoid CMD flash
+    let command_str = if program.ends_with(".cmd") || program.ends_with(".bat") {
+        format!("cmd.exe /c \"\"{}\" {}\"", program, args)
+    } else {
+        format!("\"{}\" {}", program, args)
+    };
+
     // VBS script: WshShell.Run "command", 0 (hidden), False (don't wait)
     let vbs = format!(
-        "Set s = CreateObject(\"WScript.Shell\")\ns.Run \"{} {}\", 0, False",
-        program.replace("\"", "\"\""),
-        args.replace("\"", "\"\""),
+        "Set s = CreateObject(\"WScript.Shell\")\ns.Run \"{}\", 0, False",
+        command_str.replace("\"", "\"\""),
     );
 
     let vbs_path = std::env::temp_dir().join("openclaw_wp_run.vbs");
