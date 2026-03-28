@@ -39,11 +39,19 @@ fn find_openclaw_bin() -> String {
 }
 
 /// Create a Command for openclaw with proper shell wrapping on Windows.
+/// Uses CREATE_NO_WINDOW flag to prevent cmd.exe popup.
 fn openclaw_command() -> Command {
     let bin = find_openclaw_bin();
     if cfg!(target_os = "windows") && bin.ends_with(".cmd") {
         let mut cmd = Command::new("cmd");
         cmd.args(["/C", &bin]);
+        // Hide the console window on Windows
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
         cmd
     } else {
         Command::new(bin)
