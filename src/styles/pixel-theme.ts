@@ -37,7 +37,7 @@ export const pixelBorder = (color = COLORS.border): React.CSSProperties => ({
 
 export const pixelButton: React.CSSProperties = {
   fontFamily: PIXEL_FONT,
-  fontSize: "8px",
+  fontSize: "11px",
   padding: "6px 12px",
   background: COLORS.accent,
   color: COLORS.textBright,
@@ -49,7 +49,7 @@ export const pixelButton: React.CSSProperties = {
 
 export const pixelInput: React.CSSProperties = {
   fontFamily: PIXEL_FONT,
-  fontSize: "8px",
+  fontSize: "11px",
   padding: "6px 8px",
   background: COLORS.input,
   color: COLORS.text,

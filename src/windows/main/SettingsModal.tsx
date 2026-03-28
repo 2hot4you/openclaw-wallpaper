@@ -68,7 +68,7 @@ export const SettingsModal: React.FC = () => {
     >
       <div
         style={{
-          width: 400,
+          width: 460,
           maxHeight: "80vh",
           background: COLORS.bg,
           ...pixelBorder(COLORS.accent),
@@ -90,7 +90,7 @@ export const SettingsModal: React.FC = () => {
           <span
             style={{
               fontFamily: PIXEL_FONT,
-              fontSize: "9px",
+              fontSize: "12px",
               color: COLORS.textBright,
             }}
           >
@@ -104,7 +104,7 @@ export const SettingsModal: React.FC = () => {
               border: "none",
               boxShadow: "none",
               padding: "2px 6px",
-              fontSize: "10px",
+              fontSize: "13px",
             }}
           >
             ✕
@@ -113,7 +113,7 @@ export const SettingsModal: React.FC = () => {
 
         <div style={{ padding: "14px" }}>
           {loading ? (
-            <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
+            <div style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
               Loading settings...
             </div>
           ) : (
@@ -122,7 +122,7 @@ export const SettingsModal: React.FC = () => {
               <div
                 style={{
                   fontFamily: PIXEL_FONT,
-                  fontSize: "7px",
+                  fontSize: "13px",
                   color: connectionStatus === "connected" ? COLORS.success : COLORS.error,
                   marginBottom: 14,
                   padding: "6px 8px",
@@ -158,7 +158,7 @@ export const SettingsModal: React.FC = () => {
               {/* Save button */}
               <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 {saved && (
-                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.success, alignSelf: "center" }}>
+                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.success, alignSelf: "center" }}>
                     ✓ Saved!
                   </span>
                 )}
@@ -184,7 +184,7 @@ const SettingsField: React.FC<{
     <div
       style={{
         fontFamily: PIXEL_FONT,
-        fontSize: "7px",
+        fontSize: "13px",
         color: COLORS.textDim,
         marginBottom: 4,
       }}

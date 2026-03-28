@@ -10,7 +10,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useGatewayStore, type ChatMessage } from "../../stores/gatewayStore";
 import { PIXEL_FONT, COLORS, pixelButton, pixelInput } from "../../styles/pixel-theme";
 
-const PANEL_WIDTH = 320;
+const PANEL_WIDTH = 360;
 
 /** Format timestamp to HH:MM */
 function formatTime(ts: number | undefined): string {
@@ -159,7 +159,7 @@ export const ChatPanel: React.FC = () => {
         <div
           style={{
             fontFamily: PIXEL_FONT,
-            fontSize: "8px",
+            fontSize: "11px",
             color: COLORS.textBright,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -177,7 +177,7 @@ export const ChatPanel: React.FC = () => {
             background: "transparent",
             border: "none",
             boxShadow: "none",
-            fontSize: "10px",
+            fontSize: "13px",
             cursor: "pointer",
           }}
           title="Close"
@@ -199,13 +199,13 @@ export const ChatPanel: React.FC = () => {
         }}
       >
         {loading && (
-          <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
+          <div style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
             Loading...
           </div>
         )}
 
         {!loading && messages.length === 0 && (
-          <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
+          <div style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
             No messages yet
           </div>
         )}
@@ -215,7 +215,7 @@ export const ChatPanel: React.FC = () => {
         ))}
 
         {sending && (
-          <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.warning, textAlign: "center", padding: 4 }}>
+          <div style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.warning, textAlign: "center", padding: 4 }}>
             ⏳ Waiting for response...
           </div>
         )}
@@ -285,7 +285,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
       <div
         style={{
           fontFamily: PIXEL_FONT,
-          fontSize: "6px",
+          fontSize: "9px",
           color: COLORS.textDim,
           marginBottom: 2,
           padding: "0 4px",
@@ -299,7 +299,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
       <div
         style={{
           fontFamily: PIXEL_FONT,
-          fontSize: "7px",
+          fontSize: "13px",
           lineHeight: 1.8,
           padding: "6px 8px",
           borderRadius: 4,
@@ -323,7 +323,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
         <div
           style={{
             fontFamily: PIXEL_FONT,
-            fontSize: "5px",
+            fontSize: "11px",
             color: COLORS.textDim,
             padding: "1px 4px",
             marginTop: 1,
