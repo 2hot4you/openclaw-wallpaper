@@ -12,6 +12,16 @@ import type {
 // Re-export types so existing code importing from this module keeps working.
 export type { SessionData, AgentData, ConnectionStatus, GatewayHealth, MappedCharacter };
 
+// ─── Chat Message Type ───────────────────────────────────────
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp?: number;
+  model?: string;
+  provider?: string;
+}
+
 // ─── Singleton client instance ───────────────────────────────
 
 let client: GatewayClient | null = null;
@@ -50,6 +60,12 @@ interface GatewayState {
 
   /** Fetch agents from Gateway and update state */
   refreshAgents: () => Promise<void>;
+
+  /** Fetch chat history for a session */
+  fetchChatHistory: (sessionKey: string, limit?: number) => Promise<ChatMessage[]>;
+
+  /** Send a message to a session */
+  sendMessage: (sessionKey: string, message: string) => Promise<void>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -242,6 +258,62 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       set({ agents, characters });
     } catch (err) {
       console.warn("[gatewayStore] refreshAgents failed:", err);
+    }
+  },
+
+  // ── fetchChatHistory ───────────────────────────────
+
+  fetchChatHistory: async (sessionKey: string, limit = 50): Promise<ChatMessage[]> => {
+    if (!client || client.status !== "connected") return [];
+
+    try {
+      const raw = await client.call<{
+        messages?: Array<{
+          role: string;
+          content: unknown;
+          timestamp?: number;
+          model?: string;
+          provider?: string;
+        }>;
+      }>("chat.history", { sessionKey, limit });
+
+      const messages = raw?.messages ?? [];
+      return messages.map((m) => {
+        // Content can be string or array of {type, text}
+        let text = "";
+        if (typeof m.content === "string") {
+          text = m.content;
+        } else if (Array.isArray(m.content)) {
+          text = m.content
+            .filter((c: { type?: string; text?: string }) => c.type === "text")
+            .map((c: { text?: string }) => c.text ?? "")
+            .join("\n");
+        }
+        return {
+          role: m.role as ChatMessage["role"],
+          content: text,
+          timestamp: m.timestamp,
+          model: m.model,
+          provider: m.provider,
+        };
+      });
+    } catch (err) {
+      console.warn("[gatewayStore] fetchChatHistory failed:", err);
+      return [];
+    }
+  },
+
+  // ── sendMessage ────────────────────────────────────
+
+  sendMessage: async (sessionKey: string, message: string): Promise<void> => {
+    if (!client || client.status !== "connected") return;
+
+    try {
+      const idempotencyKey = `wallpaper-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await client.call("chat.send", { sessionKey, message, idempotencyKey }, 30_000);
+    } catch (err) {
+      console.warn("[gatewayStore] sendMessage failed:", err);
+      throw err;
     }
   },
 }));

@@ -19,6 +19,7 @@ import { BootScene } from "./scenes/BootScene";
 import { OfficeScene } from "./scenes/OfficeScene";
 import { AgentManager } from "./characters/AgentManager";
 import { StatusBar } from "./ui/StatusBar";
+import { POIInteraction, type POIClickHandler } from "./ui/POIInteraction";
 import type { ConnectionStatus } from "../gateway/types";
 import type { CharacterClickHandler } from "./characters/AgentSprite";
 
@@ -27,10 +28,12 @@ export class GameManager {
   private officeScene: OfficeScene | null = null;
   private agentManager: AgentManager | null = null;
   private statusBar: StatusBar | null = null;
+  private poiInteraction: POIInteraction | null = null;
   private _onlineMode = false;
 
   // Deferred handlers (set before scene is ready)
   private _pendingClickHandler: CharacterClickHandler | null = null;
+  private _pendingPOIHandler: POIClickHandler | null = null;
   private _pendingStatusText: string = "🦞 OpenClaw Wallpaper";
   private _pendingConnectionStatus: ConnectionStatus = "disconnected";
 
@@ -99,6 +102,12 @@ export class GameManager {
 
     // Create StatusBar
     this.statusBar = new StatusBar(scene);
+
+    // Create POI interaction zones (whiteboard → settings)
+    this.poiInteraction = new POIInteraction(scene);
+    if (this._pendingPOIHandler) {
+      this.poiInteraction.onPOIClick(this._pendingPOIHandler);
+    }
 
     // Create offline overlay
     this.offlineOverlay = scene.add
@@ -189,6 +198,14 @@ export class GameManager {
   }
 
   /**
+   * Register click handler for POI interactions (whiteboard, etc).
+   */
+  onPOIClick(handler: POIClickHandler | null): void {
+    this._pendingPOIHandler = handler;
+    this.poiInteraction?.onPOIClick(handler);
+  }
+
+  /**
    * Set online/offline mode.
    */
   setOnlineMode(online: boolean): void {
@@ -224,6 +241,7 @@ export class GameManager {
   destroy(): void {
     this.agentManager?.destroy();
     this.statusBar?.destroy();
+    this.poiInteraction?.destroy();
     this.offlineOverlay?.destroy();
     this.offlineText?.destroy();
 
@@ -235,6 +253,7 @@ export class GameManager {
     this.officeScene = null;
     this.agentManager = null;
     this.statusBar = null;
+    this.poiInteraction = null;
     this.offlineOverlay = null;
     this.offlineText = null;
   }

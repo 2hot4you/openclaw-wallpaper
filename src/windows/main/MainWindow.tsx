@@ -9,12 +9,14 @@ import {
   stopOpenClaw,
   updateTrayStatus,
 } from "../../utils/tauri-ipc";
+import { ChatPanel } from "./ChatPanel";
+import { SettingsModal } from "./SettingsModal";
 import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load GameManager to isolate Phaser init
 let GameManagerModule: typeof import("../../game/GameManager") | null = null;
 
-/** Tauri event listener type — simplified to avoid needing full @tauri-apps/api/event import */
+/** Tauri event listener type */
 type UnlistenFn = () => void;
 
 /** Gateway status check interval (15 seconds) */
@@ -46,17 +48,34 @@ export const MainWindow: React.FC = () => {
   // App store
   const setOpenclawOnline = useAppStore((s) => s.setOpenclawOnline);
   const setSelectedCharacterId = useAppStore((s) => s.setSelectedCharacterId);
+  const setChatPanelOpen = useAppStore((s) => s.setChatPanelOpen);
+  const setChatSessionKey = useAppStore((s) => s.setChatSessionKey);
+  const chatPanelOpen = useAppStore((s) => s.chatPanelOpen);
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
 
   // Track connection status for scene sync
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
   connectionStatusRef.current = connectionStatus;
 
-  // Handle character click from Phaser (info bubble is now handled internally by AgentManager)
+  // Handle character click → open chat panel with that session
   const handleCharacterClick = useCallback(
     (id: string, _screenX: number, _screenY: number, _worldX: number, _worldY: number) => {
       setSelectedCharacterId(id);
+      setChatSessionKey(id);
+      setChatPanelOpen(true);
     },
-    [setSelectedCharacterId],
+    [setSelectedCharacterId, setChatSessionKey, setChatPanelOpen],
+  );
+
+  // Handle POI click → open settings on whiteboard
+  const handlePOIClick = useCallback(
+    (poiName: string) => {
+      const name = poiName.toLowerCase();
+      if (name.includes("whiteboard")) {
+        setSettingsOpen(true);
+      }
+    },
+    [setSettingsOpen],
   );
 
   // ─── Phaser Initialization ──────────────────────────
@@ -68,29 +87,26 @@ export const MainWindow: React.FC = () => {
 
     async function initGame() {
       try {
-        console.log("[Wallpaper] Loading Phaser module...");
         setStatus("Loading Phaser module...");
         GameManagerModule = await import("../../game/GameManager");
         if (cancelled) return;
 
-        console.log("[Wallpaper] Creating GameManager...");
         setStatus("Creating GameManager...");
         const gm = new GameManagerModule.GameManager();
         gameManagerRef.current = gm;
 
-        console.log("[Wallpaper] Initializing Phaser game...");
         setStatus("Initializing Phaser game...");
         await gm.init(containerRef.current!);
         if (cancelled) return;
 
-        // Register character click handler
+        // Register handlers
         gm.onCharacterClick(handleCharacterClick);
+        gm.onPOIClick(handlePOIClick);
 
         // Start in offline mode until Gateway connects
         gm.setOnlineMode(false);
         gm.setStatusText("🦞 OpenClaw Wallpaper");
 
-        console.log("[Wallpaper] Phaser ready, setting gameReady=true");
         setStatus("Running");
         setGameReady(true);
       } catch (err) {
@@ -110,7 +126,7 @@ export const MainWindow: React.FC = () => {
         gameManagerRef.current = null;
       }
     };
-  }, [handleCharacterClick]);
+  }, [handleCharacterClick, handlePOIClick]);
 
   // ─── Gateway Connection ─────────────────────────────
 
@@ -118,53 +134,38 @@ export const MainWindow: React.FC = () => {
   gameReadyRef.current = gameReady;
 
   useEffect(() => {
-    console.log("[Wallpaper] Gateway useEffect triggered");
-
     let cancelled = false;
     let statusCheckTimer: ReturnType<typeof setInterval> | null = null;
+
     async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
       try {
-        const result = await getGatewayToken();
-        console.log("[Wallpaper] Got tokens - gateway:", result.gatewayToken ? `${result.gatewayToken.substring(0, 8)}...` : "none", "device:", result.deviceToken ? `${result.deviceToken.substring(0, 8)}...` : "none");
-        return result;
-      } catch (err) {
-        console.warn("[Wallpaper] Failed to get tokens:", err);
+        return await getGatewayToken();
+      } catch {
         return {};
       }
     }
 
     async function connectToGateway() {
       try {
-        console.log("[Wallpaper] Checking OpenClaw status...");
         const online = await checkOpenClawStatus();
-        console.log("[Wallpaper] OpenClaw online:", online);
         if (cancelled) return;
 
         if (online) {
           const url = await getGatewayUrl();
-          console.log("[Wallpaper] Gateway URL:", url);
           if (cancelled) return;
           const { gatewayToken, deviceToken } = await getTokens();
-          console.log("[Wallpaper] Connecting to Gateway...");
           await connect(url, gatewayToken, deviceToken);
-          console.log("[Wallpaper] Connect call completed");
-        } else {
-          console.log("[Wallpaper] OpenClaw not online, staying in offline mode");
         }
       } catch (err) {
         console.error("[Wallpaper] connectToGateway error:", err);
       }
     }
 
-    // Initial connection attempt
     connectToGateway().catch(() => {});
 
-    // Periodic status check (reconnect if disconnected)
     statusCheckTimer = setInterval(async () => {
       if (cancelled) return;
-
-      const currentStatus = connectionStatusRef.current;
-      if (currentStatus === "disconnected") {
+      if (connectionStatusRef.current === "disconnected") {
         try {
           const online = await checkOpenClawStatus();
           if (online && !cancelled) {
@@ -174,16 +175,13 @@ export const MainWindow: React.FC = () => {
               await connect(url, gatewayToken, deviceToken);
             }
           }
-        } catch {
-          // Ignore — will retry next interval
-        }
+        } catch { /* retry next interval */ }
       }
     }, STATUS_CHECK_INTERVAL);
 
     return () => {
       cancelled = true;
       if (statusCheckTimer) clearInterval(statusCheckTimer);
-      // Only disconnect on true unmount, not on re-render
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,11 +192,7 @@ export const MainWindow: React.FC = () => {
     const unlisteners: UnlistenFn[] = [];
 
     async function getTokens(): Promise<{ gatewayToken?: string; deviceToken?: string }> {
-      try {
-        return await getGatewayToken();
-      } catch {
-        return {};
-      }
+      try { return await getGatewayToken(); } catch { return {}; }
     }
 
     async function setupTrayListeners() {
@@ -215,16 +209,13 @@ export const MainWindow: React.FC = () => {
             } else if (connectionStatusRef.current === "connected") {
               await refreshSessions();
             }
-          } catch {
-            // Ignore
-          }
+          } catch { /* Ignore */ }
         });
         unlisteners.push(u1);
 
         const u2 = await listen("tray-start-openclaw", async () => {
           try {
             await startOpenClaw();
-            // Wait a moment for Gateway to start, then try connecting
             setTimeout(async () => {
               try {
                 const online = await checkOpenClawStatus();
@@ -233,37 +224,21 @@ export const MainWindow: React.FC = () => {
                   const { gatewayToken, deviceToken } = await getTokens();
                   await connect(url, gatewayToken, deviceToken);
                 }
-              } catch {
-                // Ignore
-              }
+              } catch { /* Ignore */ }
             }, 3000);
-          } catch {
-            // Ignore
-          }
+          } catch { /* Ignore */ }
         });
         unlisteners.push(u2);
 
         const u3 = await listen("tray-stop-openclaw", async () => {
-          try {
-            await stopOpenClaw();
-            disconnect();
-          } catch {
-            // Ignore
-          }
+          try { await stopOpenClaw(); disconnect(); } catch { /* Ignore */ }
         });
         unlisteners.push(u3);
-      } catch {
-        // Tauri event system not available (e.g. in browser)
-      }
+      } catch { /* Tauri event system not available */ }
     }
 
     setupTrayListeners();
-
-    return () => {
-      for (const unlisten of unlisteners) {
-        unlisten();
-      }
-    };
+    return () => { for (const u of unlisteners) u(); };
   }, [connect, disconnect, refreshSessions]);
 
   // ─── Sync connection status → scene + tray ──────────
@@ -275,18 +250,14 @@ export const MainWindow: React.FC = () => {
     const isOnline = connectionStatus === "connected";
     gm.setOnlineMode(isOnline);
     setOpenclawOnline(isOnline);
-
-    // Update connection status on status bar
     gm.setConnectionStatus(connectionStatus);
 
-    // Update status text
     if (isOnline) {
       gm.setStatusText("🦞 OpenClaw Wallpaper");
     } else {
       gm.setStatusText(`🦞 OpenClaw Wallpaper — ${CONNECTION_LABELS[connectionStatus]}`);
     }
 
-    // Update tray status (fire and forget)
     updateTrayStatus(isOnline).catch(() => {});
   }, [connectionStatus, setOpenclawOnline, gameReady]);
 
@@ -298,63 +269,73 @@ export const MainWindow: React.FC = () => {
 
     const charManager = gm.getCharacterManager();
     if (charManager) {
-      console.log("[Wallpaper] Syncing characters with sessions:", sessions.length, "sessions");
       charManager.syncWithSessions(sessions, agents);
     }
   }, [sessions, agents, connectionStatus, gameReady]);
 
-  // ─── Periodic session refresh (catch short-lived active states) ──
+  // ─── Periodic session refresh ───────────────────────
 
   useEffect(() => {
     if (connectionStatus !== "connected") return;
-
-    const timer = setInterval(() => {
-      refreshSessions();
-    }, 3000); // every 3 seconds
-
+    const timer = setInterval(() => refreshSessions(), 3000);
     return () => clearInterval(timer);
   }, [connectionStatus, refreshSessions]);
 
   return (
     <div
-      ref={containerRef}
       style={{
         position: "relative",
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
         background: "#2a2a3d",
+        display: "flex",
       }}
     >
-      {/* Loading overlay until Phaser is ready */}
-      {!gameReady && (
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            color: "white",
-            fontFamily: "monospace",
-            fontSize: 18,
-            textAlign: "center",
-            background: "rgba(0,0,0,0.6)",
-            padding: 32,
-            borderRadius: 12,
-            zIndex: 999,
-          }}
-        >
-          <div style={{ fontSize: 32, marginBottom: 16 }}>🦞 OpenClaw Wallpaper</div>
-          <div style={{ marginBottom: 8 }}>Status: {status}</div>
-          {error && (
-            <div style={{ color: "#ff6b6b", marginTop: 12, fontSize: 14, maxWidth: 400 }}>
-              Error: {error}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Phaser canvas container — takes remaining width */}
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1,
+          position: "relative",
+          height: "100vh",
+          overflow: "hidden",
+        }}
+      >
+        {/* Loading overlay */}
+        {!gameReady && (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              color: "white",
+              fontFamily: "monospace",
+              fontSize: 18,
+              textAlign: "center",
+              background: "rgba(0,0,0,0.6)",
+              padding: 32,
+              borderRadius: 12,
+              zIndex: 999,
+            }}
+          >
+            <div style={{ fontSize: 32, marginBottom: 16 }}>🦞 OpenClaw Wallpaper</div>
+            <div style={{ marginBottom: 8 }}>Status: {status}</div>
+            {error && (
+              <div style={{ color: "#ff6b6b", marginTop: 12, fontSize: 14, maxWidth: 400 }}>
+                Error: {error}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-      {/* Info bubble is now rendered by Phaser (InfoBubble.ts) — no React panel needed */}
+      {/* Chat Panel — right sidebar */}
+      {gameReady && chatPanelOpen && <ChatPanel />}
+
+      {/* Settings Modal — overlay */}
+      {gameReady && <SettingsModal />}
     </div>
   );
 };

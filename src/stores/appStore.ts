@@ -15,9 +15,20 @@ interface AppState {
   openclawOnline: boolean;
   setOpenclawOnline: (online: boolean) => void;
 
-  /** Currently selected character ID (for InfoPanel) */
+  /** Currently selected character ID (for InfoPanel + ChatPanel) */
   selectedCharacterId: string | null;
   setSelectedCharacterId: (id: string | null) => void;
+
+  /** Whether the chat panel sidebar is open */
+  chatPanelOpen: boolean;
+  setChatPanelOpen: (open: boolean) => void;
+  /** Session key currently displayed in chat panel */
+  chatSessionKey: string | null;
+  setChatSessionKey: (key: string | null) => void;
+
+  /** Whether the settings modal is open */
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -33,4 +44,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectedCharacterId: null,
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
+
+  chatPanelOpen: false,
+  setChatPanelOpen: (open) => set({ chatPanelOpen: open }),
+  chatSessionKey: null,
+  setChatSessionKey: (key) => set({ chatSessionKey: key }),
+
+  settingsOpen: false,
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
 }));
