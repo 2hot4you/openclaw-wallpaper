@@ -207,23 +207,37 @@ pub async fn start_openclaw() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    // Try graceful shutdown via HTTP first (async, no blocking issue)
+    // Graceful HTTP shutdown (async, won't panic)
     let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
     let _ = reqwest::Client::new().post(&url).send().await;
 
-    // Also run the CLI stop
-    let _ = run_openclaw_hidden(&["gateway", "stop"]);
+    // Also run CLI stop via PowerShell
+    #[cfg(target_os = "windows")]
+    {
+        run_via_powershell(&["gateway", "stop"])?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = run_openclaw_hidden(&["gateway", "stop"]);
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    // Stop first
+    // Stop
     let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
     let _ = reqwest::Client::new().post(&url).send().await;
-    let _ = run_openclaw_hidden(&["gateway", "stop"]);
+    #[cfg(target_os = "windows")]
+    {
+        let _ = run_via_powershell(&["gateway", "stop"]);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = run_openclaw_hidden(&["gateway", "stop"]);
+    }
 
-    // Wait a moment then start
+    // Wait then start
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     run_openclaw_hidden(&["gateway", "start"])
 }
