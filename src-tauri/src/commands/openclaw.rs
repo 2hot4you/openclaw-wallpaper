@@ -16,30 +16,46 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        let command = format!("openclaw {}", args.join(" "));
-        println!("[openclaw] Launching via PowerShell hidden: {}", command);
+        let args_str = args.join(" ");
+        println!("[openclaw] Launching via PowerShell: openclaw {}", args_str);
 
-        // Start-Process with -WindowStyle Hidden ensures the spawned process
-        // (openclaw.cmd -> node.exe) also has no window.
-        // -NoProfile speeds up PowerShell startup.
-        let ps_command = format!(
-            "Start-Process -FilePath 'openclaw' -ArgumentList '{}' -WindowStyle Hidden -NoNewWindow",
-            args.join(" ")
-        );
+        // Simply invoke openclaw directly in PowerShell.
+        // PowerShell can resolve openclaw from PATH (handles .cmd too).
+        // CREATE_NO_WINDOW on powershell.exe = no console window at all.
+        let ps_script = format!("& openclaw {}", args_str);
 
-        std::process::Command::new("powershell.exe")
+        let child = std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
                 "-WindowStyle", "Hidden",
-                "-Command", &ps_command,
+                "-Command", &ps_script,
             ])
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to spawn powershell: {}", e))?;
+
+        // Log output in background for debugging
+        std::thread::spawn(move || {
+            let output = child.wait_with_output();
+            match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout);
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    if !stdout.trim().is_empty() {
+                        println!("[openclaw] PS stdout: {}", stdout.trim());
+                    }
+                    if !stderr.trim().is_empty() {
+                        eprintln!("[openclaw] PS stderr: {}", stderr.trim());
+                    }
+                    println!("[openclaw] PS exit: {:?}", o.status);
+                }
+                Err(e) => eprintln!("[openclaw] PS wait error: {}", e),
+            }
+        });
 
         return Ok(());
     }
