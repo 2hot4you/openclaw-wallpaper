@@ -296,7 +296,12 @@ export const MainWindow: React.FC = () => {
 
     const charManager = gm.getCharacterManager();
     if (charManager) {
-      charManager.syncWithSessions(sessions, agents);
+      if (connectionStatus === "connected") {
+        charManager.syncWithSessions(sessions, agents);
+      } else {
+        // Gateway offline — clear all characters (triggers despawn animations)
+        charManager.syncWithSessions([], []);
+      }
     }
   }, [sessions, agents, connectionStatus, gameReady]);
 
