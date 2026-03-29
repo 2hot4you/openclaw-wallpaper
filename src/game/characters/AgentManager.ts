@@ -253,6 +253,9 @@ export class AgentManager {
       y: this.scene.mapHeight ? this.scene.mapHeight * ENTRANCE_Y_FRAC : 672,
     };
 
+    // Collect waypoints from both spawns and pois layers
+    const globalWaypoints: Array<{ name: string; x: number; y: number }> = [];
+
     // Parse spawns by name
     for (let i = 0; i < this.scene.seatPositions.length; i++) {
       const seat = this.scene.seatPositions[i];
@@ -268,14 +271,21 @@ export class AgentManager {
 
       if (nameLower.startsWith("main_work")) {
         this.bossWorkSeat = info;
+      } else if (nameLower.startsWith("subagent_waypoint")) {
+        // Waypoint from spawns layer — collect for path routing
+        globalWaypoints.push({ name: seat.seatId, x: seat.x, y: seat.y });
+      } else if (nameLower.startsWith("subagent_disconnect") || nameLower === "disconnect") {
+        // Disconnect/entrance point from spawns layer
+        this.entrancePosition = { x: seat.x, y: seat.y };
+        console.log("[AgentManager] Disconnect from spawns:", seat.seatId, this.entrancePosition);
       } else if (nameLower.startsWith("subagent_")) {
+        // Actual seat (subagent_face#N, subagent_back#N)
         this.subagentSeats.push(info);
       }
       // Unknown names are ignored
     }
 
-    // Parse POIs for boss rest seat, entrance, waypoints, and disconnect points
-    const globalWaypoints: Array<{ name: string; x: number; y: number }> = [];
+    // Parse POIs for boss rest seat, entrance, and additional waypoints
 
     for (const poi of this.scene.poiPositions) {
       const nameLower = poi.name.toLowerCase().trim();

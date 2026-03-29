@@ -1205,18 +1205,6 @@
                  "y":239.891
                 }, 
                 {
-                 "height":0,
-                 "id":290,
-                 "name":"",
-                 "opacity":1,
-                 "rotation":0,
-                 "type":"",
-                 "visible":true,
-                 "width":0,
-                 "x":570.443,
-                 "y":289.634
-                }, 
-                {
                  "height":93.068,
                  "id":291,
                  "name":"",
@@ -1550,6 +1538,82 @@
                  "width":0,
                  "x":551.97,
                  "y":488.870540095538
+                }, 
+                {
+                 "height":0,
+                 "id":301,
+                 "name":"subagent_waypoint_#1",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"facing",
+                         "type":"string",
+                         "value":"left"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":264.110889111,
+                 "y":300
+                }, 
+                {
+                 "height":0,
+                 "id":303,
+                 "name":"subagent_disconnect",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"facing",
+                         "type":"string",
+                         "value":"left"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":98.026973027,
+                 "y":393
+                }, 
+                {
+                 "height":0,
+                 "id":305,
+                 "name":"subagent_waypoint_#2",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"facing",
+                         "type":"string",
+                         "value":"down"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":165.45954046,
+                 "y":300
+                }, 
+                {
+                 "height":0,
+                 "id":306,
+                 "name":"subagent_waypoint_#3",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"facing",
+                         "type":"string",
+                         "value":"left"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":161.713286713,
+                 "y":393
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -1558,7 +1622,7 @@
          "y":0
         }],
  "nextlayerid":13,
- "nextobjectid":301,
+ "nextobjectid":307,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.12.1",
