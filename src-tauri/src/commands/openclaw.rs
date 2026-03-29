@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 /// Default Gateway HTTP port.
 const DEFAULT_PORT: u16 = 18789;
 
@@ -16,8 +14,11 @@ const DEFAULT_PORT: u16 = 18789;
 /// to run console commands without visible windows.
 #[cfg(target_os = "windows")]
 fn run_shell_hidden(command: &str) -> Result<(), String> {
-    use windows::Win32::System::Threading::*;
-    use windows::Win32::Foundation::*;
+    use windows::Win32::System::Threading::{
+        CreateProcessW, STARTUPINFOW, PROCESS_INFORMATION,
+        STARTF_USESHOWWINDOW, CREATE_NEW_CONSOLE,
+    };
+    use windows::Win32::Foundation::CloseHandle;
     use windows::core::PWSTR;
 
     // Build command line: cmd.exe /c "openclaw gateway start"
@@ -86,6 +87,7 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 fn find_openclaw_bin() -> String {
+    use std::path::PathBuf;
     let home = dirs::home_dir().unwrap_or_default();
     let candidates: Vec<PathBuf> = vec![
         PathBuf::from("/usr/local/bin/openclaw"),
