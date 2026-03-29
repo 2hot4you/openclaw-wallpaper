@@ -4,14 +4,19 @@ const DEFAULT_PORT: u16 = 18789;
 // ─── Command Execution ──────────────────────────────────────
 
 /// Run openclaw CLI command via the hidden shell (Windows) or direct spawn (other).
-/// Zero console windows on Windows.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     #[allow(unused_variables)]
     let cmd = format!("openclaw {}", args.join(" "));
 
     #[cfg(target_os = "windows")]
     {
-        println!("[openclaw] Executing via hidden shell: {}", cmd);
+        // For gateway start: extract the actual command from the scheduled task
+        // and run it directly, bypassing schtasks (which creates new console windows).
+        if args.len() >= 2 && args[0] == "gateway" && (args[1] == "start" || args[1] == "restart") {
+            return start_gateway_direct();
+        }
+
+        println!("[openclaw] Shell exec: {}", cmd);
         return crate::hidden_shell::win::exec_detached(&cmd);
     }
 
@@ -27,6 +32,100 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
             .map_err(|e| format!("Failed to run openclaw: {}", e))?;
         Ok(())
     }
+}
+
+/// Start the Gateway by directly running the node.exe command from the
+/// scheduled task XML, using CREATE_NO_WINDOW. This bypasses schtasks
+/// entirely, which is the source of CMD window popups.
+#[cfg(target_os = "windows")]
+fn start_gateway_direct() -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // Query the scheduled task to find the actual command
+    let query_output = std::process::Command::new("schtasks.exe")
+        .args(["/Query", "/TN", "OpenClaw Gateway", "/XML"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("schtasks query failed: {}", e))?;
+
+    if !query_output.status.success() {
+        println!("[openclaw] No scheduled task found, falling back to hidden shell");
+        return crate::hidden_shell::win::exec_detached("openclaw gateway start");
+    }
+
+    let xml = String::from_utf8_lossy(&query_output.stdout);
+
+    // Extract <Command> and <Arguments> from XML
+    let exe = extract_xml_tag(&xml, "Command");
+    let args_str = extract_xml_tag(&xml, "Arguments");
+    let working_dir = extract_xml_tag(&xml, "WorkingDirectory");
+
+    println!("[openclaw] Task command: {:?}", exe);
+    println!("[openclaw] Task args: {:?}", args_str);
+    println!("[openclaw] Task workdir: {:?}", working_dir);
+
+    if let Some(exe_path) = exe {
+        let mut cmd = std::process::Command::new(&exe_path);
+
+        if let Some(ref a) = args_str {
+            // Parse arguments (handle quoted paths)
+            for arg in split_args(a) {
+                cmd.arg(arg);
+            }
+        }
+
+        if let Some(ref wd) = working_dir {
+            cmd.current_dir(wd);
+        }
+
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+
+        cmd.spawn()
+            .map_err(|e| format!("Gateway direct start failed: {}", e))?;
+
+        println!("[openclaw] Gateway started directly (bypassed schtasks)");
+        return Ok(());
+    }
+
+    // Fallback
+    println!("[openclaw] Could not parse task, falling back to hidden shell");
+    crate::hidden_shell::win::exec_detached("openclaw gateway start")
+}
+
+#[cfg(target_os = "windows")]
+fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let start = xml.find(&open)? + open.len();
+    let end = start + xml[start..].find(&close)?;
+    let val = xml[start..end].trim().to_string();
+    if val.is_empty() { None } else { Some(val) }
+}
+
+#[cfg(target_os = "windows")]
+fn split_args(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    for ch in s.chars() {
+        match ch {
+            '"' => in_quote = !in_quote,
+            ' ' if !in_quote => {
+                if !current.is_empty() {
+                    result.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        result.push(current);
+    }
+    result
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -64,6 +163,7 @@ pub async fn start_openclaw() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
+    // Stop via hidden shell (openclaw gateway stop handles schtasks internally)
     run_openclaw_hidden(&["gateway", "stop"])
 }
 
