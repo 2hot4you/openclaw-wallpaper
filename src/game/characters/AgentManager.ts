@@ -450,12 +450,15 @@ export class AgentManager {
       return;
     }
 
-    // Subagent: assign a seat and walk there via waypoints
+    // Subagent: assign a seat and walk there via waypoints (reversed for entry)
     const seatIdx = this.assignSeat(sessionKey);
     if (seatIdx !== null && seatIdx < this.subagentSeats.length) {
       const seat = this.subagentSeats[seatIdx];
+      // Waypoints are ordered from seat→exit (#1 near seat, #N near exit)
+      // For entry: walk reversed (exit→seat): #N → ... → #1 → seat
+      const entryPath = [...this.waypoints].reverse();
       agent.moveAlongPath(
-        this.waypoints,
+        entryPath,
         seat.x,
         seat.y + SEAT_Y_OFFSET,
         undefined,
