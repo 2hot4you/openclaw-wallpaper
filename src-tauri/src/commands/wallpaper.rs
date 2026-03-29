@@ -28,7 +28,6 @@ pub async fn attach_wallpaper(app: AppHandle) -> Result<(), String> {
             .ok_or("Main window not found")?;
 
         // Get the raw HWND via Tauri's window handle
-        use tauri::Emitter;
         let hwnd = {
             let raw = window.hwnd().map_err(|e| e.to_string())?;
             raw.0 as isize

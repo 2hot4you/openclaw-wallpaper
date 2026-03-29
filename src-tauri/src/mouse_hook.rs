@@ -14,9 +14,10 @@
 #[cfg(target_os = "windows")]
 pub mod win {
     use std::sync::atomic::{AtomicIsize, AtomicBool, Ordering};
-    use std::sync::OnceLock;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM, POINT};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::*;
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
 
     /// Target HWND to forward mouse events to (our wallpaper webview window)
     static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -75,10 +76,10 @@ pub mod win {
                         // Build wParam: include mouse button state flags
                         let mut mk_flags: u32 = 0;
                         if GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000 != 0 {
-                            mk_flags |= MK_LBUTTON.0 as u32;
+                            mk_flags |= 0x0001; // MK_LBUTTON
                         }
                         if GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16 & 0x8000 != 0 {
-                            mk_flags |= MK_RBUTTON.0 as u32;
+                            mk_flags |= 0x0002; // MK_RBUTTON
                         }
 
                         // For mouse wheel, high word of wParam = wheel delta
@@ -144,12 +145,6 @@ pub mod win {
     /// Stop the global mouse hook.
     pub fn stop_mouse_hook() {
         HOOK_ACTIVE.store(false, Ordering::Relaxed);
-        // Post WM_QUIT to break the message loop in the hook thread
-        let hook_raw = HOOK_HANDLE.load(Ordering::Relaxed);
-        if hook_raw != 0 {
-            // The hook thread's message loop will exit on the next iteration
-            // when HOOK_ACTIVE is false
-        }
         TARGET_HWND.store(0, Ordering::Relaxed);
     }
 }
