@@ -5,17 +5,17 @@
  * - Syncs characters with Gateway session data
  * - Assigns seat positions from the tilemap
  * - Handles character spawn/despawn lifecycle
+ * - Routes characters along per-seat waypoint paths
  * - Routes click events to the React layer
  *
  * Behavior model:
  * - Main agent ("boss"):
- *   - Working → sits at "Main_work_right" (facing right)
- *   - Idle → sits at "Main_rest_face" (facing down, on sofa)
+ *   - Working → walks to "Main_work_right"
+ *   - Idle → walks to "Main_rest_face"
  * - Subagents:
- *   - Spawn at entrance, walk to assigned seat
+ *   - Spawn at door, walk along seat-specific route to assigned seat
  *   - Stay at seat regardless of status
- *   - Walk to entrance before despawning
- *   - "subagent_face#N" seats face down, "subagent_back#N" seats face up
+ *   - Walk reverse route back to door before despawning
  */
 
 import { AgentSprite, type AgentStatus, type CharacterClickHandler } from "./AgentSprite";
@@ -25,20 +25,9 @@ import type { OfficeScene } from "../scenes/OfficeScene";
 import type { SessionData, AgentData } from "../../gateway/types";
 import { InfoBubble } from "../ui/InfoBubble";
 
-// ── Layout constants ────────────────────────────────────────
+// ── Constants ───────────────────────────────────────────────
 
-/** Entrance/exit position — left side of the map, near the door */
-const ENTRANCE_X = 50;
-const ENTRANCE_Y_FRAC = 0.7; // fraction of mapHeight
-
-/** Main agent session key */
 const MAIN_AGENT_KEY = "agent:main:main";
-
-/**
- * Y offset applied to seat positions so the character sprite
- * overlaps the chair and looks like they are sitting.
- * Positive = move sprite downward.
- */
 const SEAT_Y_OFFSET = 16;
 
 // ── Types ───────────────────────────────────────────────────
@@ -51,184 +40,205 @@ interface SeatInfo {
   originalIndex: number;
 }
 
+interface WaypointInfo {
+  name: string;
+  x: number;
+  y: number;
+  inFacing?: string;   // facing direction when entering (walking IN)
+  outFacing?: string;  // facing direction when exiting (walking OUT)
+}
+
+/** Route definition: ordered waypoint names from door to seat */
+// (reserved for future tilemap-based route definitions)
+
 export class AgentManager {
   private scene: OfficeScene;
   private agents: Map<string, AgentSprite> = new Map();
-  private seatAssignments: Map<string, number> = new Map(); // sessionKey → subagentSeats index
+  private seatAssignments: Map<string, number> = new Map();
   private usedSeats: Set<number> = new Set();
   private nextSpriteIndex = 0;
-  /** The actual handler set on sprites (wraps external + bubble logic) */
   private _internalClickHandler: CharacterClickHandler | null = null;
 
-  /** Info bubble (Phaser-native, world space) */
   private infoBubble: InfoBubble;
-
-  /** Last synced session + agent data (for bubble display) */
   private lastSessions: SessionData[] = [];
   private lastAgents: AgentData[] = [];
 
-  /** Boss positions resolved from tilemap */
-  private bossWorkSeat: SeatInfo | null = null;  // Main_work_right
-  private bossRestSeat: SeatInfo | null = null;   // Main_rest_face (from POIs)
-
-  /** Subagent seats (filtered from spawns, excludes boss seats) */
+  // Tilemap-resolved positions
+  private bossWorkSeat: SeatInfo | null = null;
+  private bossRestSeat: SeatInfo | null = null;
   private subagentSeats: SeatInfo[] = [];
+  private doorPosition: { x: number; y: number } = { x: 98, y: 393 };
 
-  /** Entrance position */
-  private entrancePosition: { x: number; y: number } = { x: ENTRANCE_X, y: 672 };
+  // All waypoints by name (for route lookup)
+  private waypointMap: Map<string, WaypointInfo> = new Map();
 
-  /** Global waypoints (shared by all agents) */
-  private waypoints: Array<{ x: number; y: number }> = [];
+  // Per-seat routes: seat name → entry path (waypoint names, door to seat)
+  private seatRoutes: Map<string, string[]> = new Map();
+
+  // Boss routes
+  private bossWorkRoute: string[] = [];
+  private bossRestRoute: string[] = [];
 
   constructor(scene: OfficeScene) {
     this.scene = scene;
     this.infoBubble = new InfoBubble(scene);
     this.resolvePositions();
+    this.buildRoutes();
+  }
+
+  // ── Route definitions ─────────────────────────────
+
+  private buildRoutes(): void {
+    // Subagent seat routes (entry: door → waypoints → seat)
+    this.seatRoutes.set("subagent_face#1", [
+      "subagent_waypoint_#1", "subagent_waypoint_#3", "subagent_waypoint_#4",
+    ]);
+    this.seatRoutes.set("subagent_face#2", [
+      "subagent_waypoint_#1", "subagent_waypoint_#3", "subagent_waypoint_#5",
+    ]);
+    this.seatRoutes.set("subagent_face#3", [
+      "subagent_waypoint_#1", "subagent_waypoint_#3", "subagent_waypoint_#6",
+    ]);
+    this.seatRoutes.set("subagent_back#1", [
+      "subagent_waypoint_#2", "subagent_waypoint_#7", "subagent_waypoint_#8",
+    ]);
+    this.seatRoutes.set("subagent_back#2", [
+      "subagent_waypoint_#2", "subagent_waypoint_#7", "subagent_waypoint_#9",
+    ]);
+    this.seatRoutes.set("subagent_back#3", [
+      "subagent_waypoint_#2", "subagent_waypoint_#7", "subagent_waypoint_#10",
+    ]);
+
+    // Boss routes
+    this.bossWorkRoute = [
+      "subagent_waypoint_#2", "subagent_waypoint_#7", "subagent_waypoint_#10",
+      "subagent_waypoint_#11", "subagent_waypoint_#12",
+      "subagent_waypoint_#13", "subagent_waypoint_#14",
+    ];
+    this.bossRestRoute = [
+      "subagent_waypoint_#2", "subagent_waypoint_#7", "subagent_waypoint_#10",
+      "subagent_waypoint_#11", "subagent_waypoint_#12",
+      "subagent_waypoint_#15", "subagent_waypoint_#16",
+    ];
+
+    console.log("[AgentManager] Routes built:", this.seatRoutes.size, "seat routes + 2 boss routes");
+  }
+
+  /** Resolve waypoint names to coordinates */
+  private resolveRoute(waypointNames: string[]): Array<{ x: number; y: number }> {
+    const points: Array<{ x: number; y: number }> = [];
+    for (const name of waypointNames) {
+      const wp = this.waypointMap.get(name);
+      if (wp) {
+        points.push({ x: wp.x, y: wp.y });
+      } else {
+        console.warn("[AgentManager] Waypoint not found:", name);
+      }
+    }
+    return points;
   }
 
   // ── Public API ────────────────────────────────────
 
-  /**
-   * Register a click handler for all characters.
-   * Also sets up internal Phaser info bubble on click.
-   */
   onCharacterClick(handler: CharacterClickHandler | null): void {
-
-    // Internal handler that shows the Phaser info bubble
     const internalHandler: CharacterClickHandler = (id, _sx, _sy, worldX, worldY) => {
-      // Find session + agent data for this character
       const session = this.lastSessions.find((s) => s.key === id);
       if (!session) return;
-
       const agent = session.agentId
         ? this.lastAgents.find((a) => a.agentId === session.agentId)
         : undefined;
-
       const seatName = this.getSeatIndex(id);
 
-      // Toggle: if clicking the same character, hide
       if (this.infoBubble.visible && this.infoBubble.currentTargetId === id) {
         this.infoBubble.hide();
         return;
       }
-
       this.infoBubble.show(worldX, worldY, session, agent, seatName);
-
-      // Also call external handler if set
       handler?.(id, _sx, _sy, worldX, worldY);
     };
-
     this._internalClickHandler = internalHandler;
-
     for (const agent of this.agents.values()) {
       agent.setClickHandler(internalHandler);
     }
   }
 
-  /**
-   * Get the seat name assigned to an agent (for debug display).
-   */
   getSeatIndex(sessionKey: string): string | null {
     if (this.isMainAgent(sessionKey)) {
       const agent = this.agents.get(sessionKey);
-      if (agent?.status === "working" && this.bossWorkSeat) {
-        return this.bossWorkSeat.name;
-      }
+      if (agent?.status === "working" && this.bossWorkSeat) return this.bossWorkSeat.name;
       return this.bossRestSeat?.name ?? this.bossWorkSeat?.name ?? null;
     }
     const idx = this.seatAssignments.get(sessionKey);
-    if (idx !== undefined && idx < this.subagentSeats.length) {
-      return this.subagentSeats[idx].name;
-    }
+    if (idx !== undefined && idx < this.subagentSeats.length) return this.subagentSeats[idx].name;
     return null;
   }
 
-  /**
-   * Sync agents with current session list from Gateway.
-   */
   syncWithSessions(sessions: SessionData[], agents?: AgentData[]): void {
-    // Store for bubble display
     this.lastSessions = sessions;
     if (agents) this.lastAgents = agents;
     const sessionKeys = new Set(sessions.map((s) => s.key));
 
-    // ── Handle agents whose session disappeared ──
+    // Handle disappeared sessions → despawn
     for (const [key, agent] of this.agents) {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
+        const seatName = this.getSeatIndex(key);
         this.releaseAgent(key);
 
-        if (this.isSubagent(key)) {
-          agent.walkPathThenDespawn(
-            this.waypoints,
-            this.entrancePosition.x,
-            this.entrancePosition.y,
-          );
+        if (this.isMainAgent(key)) {
+          // Boss: walk back to door via current route (reversed)
+          const currentRoute = agent.status === "working" ? this.bossWorkRoute : this.bossRestRoute;
+          const exitPath = this.resolveRoute([...currentRoute].reverse());
+          agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+        } else if (seatName) {
+          // Subagent: walk reverse route back to door
+          const routeNames = this.seatRoutes.get(seatName);
+          if (routeNames) {
+            const exitPath = this.resolveRoute([...routeNames].reverse());
+            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+          } else {
+            agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
+          }
         } else {
           agent.despawn();
         }
       }
     }
 
-    // ── Clean up fully despawned agents ──
+    // Clean up fully despawned
     for (const [key, agent] of this.agents) {
-      if (agent.isDespawned) {
-        this.agents.delete(key);
-      }
+      if (agent.isDespawned) this.agents.delete(key);
     }
 
-    // ── Add / update characters for current sessions ──
+    // Add/update characters
     for (const session of sessions) {
       const existing = this.agents.get(session.key);
       if (existing?.isDespawning) continue;
 
       const status = this.mapSessionStatus(session.status, session.updatedAt);
-      console.log(
-        "[AgentManager] Session:", session.key.substring(0, 40),
-        "label:", session.label,
-        "rawStatus:", session.status, "→", status,
-        "existing:", !!existing,
-        "type:", this.isMainAgent(session.key) ? "boss" : "subagent",
-      );
 
       let agent: AgentSprite;
       if (!existing) {
         const spawned = this.spawnAgent(session);
-        if (!spawned) {
-          console.warn("[AgentManager] Failed to spawn for", session.key);
-          continue;
-        }
+        if (!spawned) continue;
         agent = spawned;
       } else {
         agent = existing;
       }
 
-      // Update status
       const prevStatus = agent.status;
       agent.setStatus(status);
 
-      // Position: subagents only move on spawn; boss moves on status change
       if (!existing) {
         this.positionAgent(session.key, agent, status);
       } else if (this.isMainAgent(session.key) && prevStatus !== status) {
-        // Boss switches between work seat and rest seat
-        this.positionAgent(session.key, agent, status);
+        this.positionBoss(agent, status, prevStatus);
       }
     }
-
-    console.log(
-      "[AgentManager] After sync — total agents:", this.agents.size,
-      "subagent seats used:", this.usedSeats.size,
-    );
   }
 
-  /**
-   * Destroy all agents and clean up.
-   */
   destroy(): void {
     this.infoBubble.destroy();
-    for (const agent of this.agents.values()) {
-      agent.destroy();
-    }
+    for (const agent of this.agents.values()) agent.destroy();
     this.agents.clear();
     this.seatAssignments.clear();
     this.usedSeats.clear();
@@ -240,6 +250,7 @@ export class AgentManager {
     return sessionKey === MAIN_AGENT_KEY;
   }
 
+  // @ts-ignore reserved for future use
   private isSubagent(sessionKey: string): boolean {
     return sessionKey.includes("subagent:");
   }
@@ -247,234 +258,152 @@ export class AgentManager {
   // ── Position resolution ───────────────────────────
 
   private resolvePositions(): void {
-    // Default entrance (fallback)
-    this.entrancePosition = {
-      x: ENTRANCE_X,
-      y: this.scene.mapHeight ? this.scene.mapHeight * ENTRANCE_Y_FRAC : 672,
-    };
-
-    // Collect waypoints from both spawns and pois layers
-    const globalWaypoints: Array<{ name: string; x: number; y: number }> = [];
-
-    // Parse spawns by name
+    // Parse spawns
     for (let i = 0; i < this.scene.seatPositions.length; i++) {
       const seat = this.scene.seatPositions[i];
-      const info: SeatInfo = {
-        name: seat.seatId,
-        x: seat.x,
-        y: seat.y,
-        facing: seat.facing,
-        originalIndex: i,
-      };
-
       const nameLower = seat.seatId.toLowerCase();
 
       if (nameLower.startsWith("main_work")) {
-        this.bossWorkSeat = info;
+        this.bossWorkSeat = { name: seat.seatId, x: seat.x, y: seat.y, facing: seat.facing, originalIndex: i };
       } else if (nameLower.startsWith("subagent_waypoint")) {
-        // Waypoint from spawns layer — collect for path routing
-        globalWaypoints.push({ name: seat.seatId, x: seat.x, y: seat.y });
-      } else if (nameLower.startsWith("subagent_disconnect") || nameLower === "disconnect") {
-        // Disconnect/entrance point from spawns layer
-        this.entrancePosition = { x: seat.x, y: seat.y };
-        console.log("[AgentManager] Disconnect from spawns:", seat.seatId, this.entrancePosition);
-      } else if (nameLower.startsWith("subagent_")) {
-        // Actual seat (subagent_face#N, subagent_back#N)
-        this.subagentSeats.push(info);
+        const props = this.getSpawnProperties(i);
+        this.waypointMap.set(seat.seatId, {
+          name: seat.seatId,
+          x: seat.x,
+          y: seat.y,
+          inFacing: props.in,
+          outFacing: props.out,
+        });
+      } else if (nameLower === "door" || nameLower === "entrance") {
+        this.doorPosition = { x: seat.x, y: seat.y };
+        console.log("[AgentManager] Door position:", this.doorPosition);
+      } else if (nameLower.startsWith("subagent_") && !nameLower.includes("disconnect")) {
+        this.subagentSeats.push({ name: seat.seatId, x: seat.x, y: seat.y, facing: seat.facing, originalIndex: i });
       }
-      // Unknown names are ignored
     }
 
-    // Parse POIs for boss rest seat, entrance, and additional waypoints
-
+    // Parse POIs
     for (const poi of this.scene.poiPositions) {
-      const nameLower = poi.name.toLowerCase().trim();
-
+      const nameLower = poi.name.toLowerCase();
       if (nameLower.startsWith("main_rest")) {
-        this.bossRestSeat = {
-          name: poi.name,
-          x: poi.x,
-          y: poi.y,
-          facing: "down",
-          originalIndex: -1,
-        };
-      } else if (nameLower === "entrance" || nameLower === "door" || nameLower === "exit") {
-        this.entrancePosition = { x: poi.x, y: poi.y };
-        console.log("[AgentManager] Entrance from POI:", poi.name, this.entrancePosition);
-
-      } else if (nameLower.startsWith("subagent_disconnect") || nameLower === "disconnect") {
-        // Disconnect point = exit/entrance for subagents
-        this.entrancePosition = { x: poi.x, y: poi.y };
-        console.log("[AgentManager] Disconnect/entrance from POI:", poi.name, { x: poi.x, y: poi.y });
-
-      } else if (nameLower.startsWith("subagent_waypoint_#") || nameLower.startsWith("subagent_waypoint_")) {
-        // Per-seat waypoint: subagent_waypoint_#1, subagent_waypoint_#2, etc.
-        // These are GLOBAL waypoints shared by all subagents (numbered for ordering)
-        globalWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
-
-      } else if (nameLower.startsWith("waypoint")) {
-        // Legacy global waypoints: waypoint_1, waypoint_2, etc.
-        globalWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
+        this.bossRestSeat = { name: poi.name, x: poi.x, y: poi.y, facing: "down", originalIndex: -1 };
       }
-    }
-
-    // Sort global waypoints by name (natural numeric sort)
-    globalWaypoints.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    this.waypoints = globalWaypoints.map(w => ({ x: w.x, y: w.y }));
-
-    if (this.waypoints.length > 0) {
-      console.log("[AgentManager] Waypoints:", this.waypoints.map((w, i) =>
-        `${globalWaypoints[i]?.name} (${w.x.toFixed(0)},${w.y.toFixed(0)})`));
     }
 
     console.log(
-      "[AgentManager] Resolved —",
-      "bossWork:", this.bossWorkSeat?.name, `(${this.bossWorkSeat?.x.toFixed(0)}, ${this.bossWorkSeat?.y.toFixed(0)})`,
-      "bossRest:", this.bossRestSeat?.name, `(${this.bossRestSeat?.x.toFixed(0)}, ${this.bossRestSeat?.y.toFixed(0)})`,
-      "subagentSeats:", this.subagentSeats.map(s => s.name),
-      "entrance:", this.entrancePosition,
+      "[AgentManager] Positions —",
+      "door:", this.doorPosition,
+      "bossWork:", this.bossWorkSeat?.name,
+      "bossRest:", this.bossRestSeat?.name,
+      "seats:", this.subagentSeats.map(s => s.name),
+      "waypoints:", [...this.waypointMap.keys()],
     );
+  }
+
+  /** Get custom properties from a spawn point by index */
+  private getSpawnProperties(index: number): Record<string, string> {
+    // Access the raw tilemap data to get properties
+    const spawnsLayer = (this.scene as any).cache?.tilemap?.get("office")?.data?.layers
+      ?.find((l: any) => l.name === "spawns");
+    if (!spawnsLayer?.objects?.[index]) return {};
+    const obj = spawnsLayer.objects[index];
+    const props: Record<string, string> = {};
+    for (const p of obj.properties || []) {
+      props[p.name] = String(p.value);
+    }
+    return props;
   }
 
   // ── Status mapping ────────────────────────────────
 
-  /**
-   * Map session status → AgentSprite status.
-   *
-   * Heuristic: if the session's `updatedAt` is very recent (within ACTIVE_THRESHOLD_MS)
-   * and the raw status is "done", we treat it as "working". This catches subagent
-   * sessions that complete between polls — Gateway returns "done" but the agent
-   * was clearly just active.
-   */
   private static readonly ACTIVE_THRESHOLD_MS = 15_000;
 
   private mapSessionStatus(status: string | undefined, updatedAt?: number): AgentStatus {
-    // Explicit active states
     switch (status) {
-      case "active":
-      case "running":
-      case "busy":
-        return "working";
-      case "error":
-      case "failed":
-        return "error";
+      case "active": case "running": case "busy": return "working";
+      case "error": case "failed": return "error";
     }
-
-    // Heuristic: "done" with very recent updatedAt → treat as working
     if (status === "done" && updatedAt) {
-      const age = Date.now() - updatedAt;
-      if (age < AgentManager.ACTIVE_THRESHOLD_MS) {
-        return "working";
-      }
+      if (Date.now() - updatedAt < AgentManager.ACTIVE_THRESHOLD_MS) return "working";
     }
-
     return "idle";
   }
 
   // ── Spawn ─────────────────────────────────────────
 
   private spawnAgent(session: SessionData): AgentSprite | null {
-    const displayName =
-      session.label ??
-      session.agentId ??
-      session.key.split(":").pop() ??
-      "agent";
-
-    const spriteConfig =
-      CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
+    const displayName = session.label ?? session.agentId ?? session.key.split(":").pop() ?? "agent";
+    const spriteConfig = CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
     this.nextSpriteIndex++;
 
     const isMain = this.isMainAgent(session.key);
-    let spawnX: number;
-    let spawnY: number;
-    let spawnVisible: boolean;
 
-    if (isMain) {
-      // Boss: spawn at rest seat (default idle position) with pop-in
-      const seat = this.bossRestSeat ?? this.bossWorkSeat;
-      spawnX = seat ? seat.x : 415;
-      spawnY = seat ? seat.y + SEAT_Y_OFFSET : 673 + SEAT_Y_OFFSET;
-      spawnVisible = false;
-    } else {
-      // Subagent: spawn at entrance, will walk to seat
-      spawnX = this.entrancePosition.x;
-      spawnY = this.entrancePosition.y;
-      spawnVisible = true;
-    }
-
-    console.log(
-      "[AgentManager] Spawning", displayName,
-      "at", spawnX.toFixed(0), spawnY.toFixed(0),
-      "sprite:", spriteConfig.key,
-      "type:", isMain ? "boss" : "subagent",
-    );
+    // All agents spawn at the door
+    const spawnX = this.doorPosition.x;
+    const spawnY = this.doorPosition.y;
 
     const agent = new AgentSprite(
-      this.scene,
-      session.key,
-      displayName,
-      spriteConfig.key,
-      spawnX,
-      spawnY,
-      spawnVisible,
+      this.scene, session.key, displayName, spriteConfig.key,
+      spawnX, spawnY,
+      !isMain, // subagents visible immediately (walk in), boss pop-in at door then walk
     );
-
-    // Set initial facing for boss (spawns in place, doesn't walk)
-    if (isMain) {
-      const seat = this.bossRestSeat ?? this.bossWorkSeat;
-      if (seat?.facing) {
-        agent.setFacing(seat.facing as Direction);
-      }
-    }
 
     agent.setClickHandler(this._internalClickHandler);
     this.agents.set(session.key, agent);
-
     return agent;
   }
 
   // ── Positioning ───────────────────────────────────
 
-  private positionAgent(
-    sessionKey: string,
-    agent: AgentSprite,
-    status: AgentStatus,
-  ): void {
+  private positionAgent(sessionKey: string, agent: AgentSprite, status: AgentStatus): void {
     if (this.isMainAgent(sessionKey)) {
-      // Boss: switch between work and rest seats based on status
-      if (status === "working" && this.bossWorkSeat) {
-        agent.moveTo(
-          this.bossWorkSeat.x,
-          this.bossWorkSeat.y + SEAT_Y_OFFSET,
-          undefined,
-          this.bossWorkSeat.facing as Direction,
-        );
-      } else if (this.bossRestSeat) {
-        agent.moveTo(
-          this.bossRestSeat.x,
-          this.bossRestSeat.y + SEAT_Y_OFFSET,
-          undefined,
-          this.bossRestSeat.facing as Direction,
-        );
-      }
+      this.positionBoss(agent, status, undefined);
       return;
     }
 
-    // Subagent: assign a seat and walk there via waypoints (reversed for entry)
+    // Subagent: walk along route to seat
     const seatIdx = this.assignSeat(sessionKey);
     if (seatIdx !== null && seatIdx < this.subagentSeats.length) {
       const seat = this.subagentSeats[seatIdx];
-      // Waypoints are ordered from seat→exit (#1 near seat, #N near exit)
-      // For entry: walk reversed (exit→seat): #N → ... → #1 → seat
-      const entryPath = [...this.waypoints].reverse();
-      agent.moveAlongPath(
-        entryPath,
-        seat.x,
-        seat.y + SEAT_Y_OFFSET,
-        undefined,
-        seat.facing as Direction,
-      );
+      const routeNames = this.seatRoutes.get(seat.name);
+      if (routeNames) {
+        const entryPath = this.resolveRoute(routeNames);
+        agent.moveAlongPath(entryPath, seat.x, seat.y + SEAT_Y_OFFSET, undefined, seat.facing as Direction);
+      } else {
+        agent.moveTo(seat.x, seat.y + SEAT_Y_OFFSET, undefined, seat.facing as Direction);
+      }
     }
+  }
+
+  private positionBoss(agent: AgentSprite, status: AgentStatus, prevStatus: AgentStatus | undefined): void {
+    if (status === "working" && this.bossWorkSeat) {
+      const path = this.resolveRoute(
+        prevStatus === "idle" ? this.getTransitionRoute(this.bossRestRoute, this.bossWorkRoute) : this.bossWorkRoute,
+      );
+      agent.moveAlongPath(path, this.bossWorkSeat.x, this.bossWorkSeat.y + SEAT_Y_OFFSET, undefined, this.bossWorkSeat.facing as Direction);
+    } else if (this.bossRestSeat) {
+      const path = this.resolveRoute(
+        prevStatus === "working" ? this.getTransitionRoute(this.bossWorkRoute, this.bossRestRoute) : this.bossRestRoute,
+      );
+      agent.moveAlongPath(path, this.bossRestSeat.x, this.bossRestSeat.y + SEAT_Y_OFFSET, undefined, "down" as Direction);
+    }
+  }
+
+  /** Get transition route: reverse shared prefix of old route, then forward new route's unique suffix */
+  private getTransitionRoute(fromRoute: string[], toRoute: string[]): string[] {
+    // Find common prefix length
+    let commonLen = 0;
+    for (let i = 0; i < Math.min(fromRoute.length, toRoute.length); i++) {
+      if (fromRoute[i] === toRoute[i]) commonLen = i + 1;
+      else break;
+    }
+
+    // Reverse from current position back to the fork point
+    const backtrack = fromRoute.slice(commonLen).reverse();
+    // Then forward along the new route from the fork
+    const forward = toRoute.slice(commonLen);
+
+    return [...backtrack, ...forward];
   }
 
   // ── Seat management ───────────────────────────────
@@ -482,20 +411,13 @@ export class AgentManager {
   private assignSeat(sessionKey: string): number | null {
     const existing = this.seatAssignments.get(sessionKey);
     if (existing !== undefined) return existing;
-
     for (let i = 0; i < this.subagentSeats.length; i++) {
       if (!this.usedSeats.has(i)) {
         this.seatAssignments.set(sessionKey, i);
         this.usedSeats.add(i);
-        console.log(
-          "[AgentManager] Assigned seat", this.subagentSeats[i].name,
-          "(idx", i, ") to", sessionKey.substring(0, 30),
-        );
         return i;
       }
     }
-
-    // No free seats — share the last one
     return this.subagentSeats.length > 0 ? this.subagentSeats.length - 1 : null;
   }
 
