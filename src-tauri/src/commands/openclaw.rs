@@ -99,29 +99,66 @@ fn find_node_exe() -> Option<PathBuf> {
 /// Find the openclaw JS entry point. No subprocesses.
 #[cfg(target_os = "windows")]
 fn find_openclaw_js() -> Option<PathBuf> {
-    let appdata = std::env::var("APPDATA").unwrap_or_default();
-    let npm_prefix = PathBuf::from(&appdata).join("npm");
+    // Collect all places where openclaw.cmd might exist
+    let mut cmd_candidates: Vec<PathBuf> = Vec::new();
 
-    // 1. Parse the .cmd wrapper to find the JS entry
-    let cmd_path = npm_prefix.join("openclaw.cmd");
-    println!("[openclaw] Looking for cmd wrapper: {:?} exists={}", cmd_path, cmd_path.exists());
+    // APPDATA/npm (standard npm global)
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        cmd_candidates.push(PathBuf::from(&appdata).join("npm").join("openclaw.cmd"));
+    }
 
-    if cmd_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cmd_path) {
-            println!("[openclaw] openclaw.cmd content:\n{}", content);
+    // Search PATH for openclaw.cmd
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(';') {
+            if dir.is_empty() { continue; }
+            let c = PathBuf::from(dir).join("openclaw.cmd");
+            if c.exists() && !cmd_candidates.contains(&c) {
+                cmd_candidates.push(c);
+            }
+        }
+    }
+
+    for cmd_path in &cmd_candidates {
+        if !cmd_path.exists() { continue; }
+        println!("[openclaw] Parsing cmd wrapper: {:?}", cmd_path);
+
+        let cmd_dir = cmd_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+        if let Ok(content) = std::fs::read_to_string(cmd_path) {
+            println!("[openclaw] Content of {:?}:\n{}", cmd_path, content);
+
+            // npm-generated .cmd files have lines like:
+            //   @IF EXIST "%~dp0\node.exe" (
+            //     "%~dp0\node.exe"  "%~dp0\node_modules\openclaw\dist\cli.js" %*
+            //   ) ELSE (
+            //     node  "%~dp0\node_modules\openclaw\dist\cli.js" %*
+            //   )
+            // %~dp0 = directory of the .cmd file itself
+
             for line in content.lines() {
-                if let Some(idx) = line.find("node_modules") {
-                    let rest = &line[idx..];
-                    if let Some(js_end) = rest.find(".js") {
-                        let rel_path = rest[..js_end + 3]
-                            .replace("\\\\", "\\")
-                            .replace("\"", "")
-                            .trim()
-                            .to_string();
-                        let full_path = npm_prefix.join(&rel_path);
-                        println!("[openclaw] Extracted JS path: {:?} exists={}", full_path, full_path.exists());
+                // Find any .js file path in the line
+                if let Some(js_idx) = line.find(".js") {
+                    // Walk backwards from .js to find the start of the path
+                    let prefix = &line[..js_idx + 3];
+                    // Look for the last quote or space before .js to find path start
+                    let path_str = extract_js_path(prefix);
+                    if !path_str.is_empty() {
+                        // Replace %~dp0 with the cmd_dir
+                        let resolved = path_str
+                            .replace("%~dp0\\", "")
+                            .replace("%~dp0/", "")
+                            .replace("%~dp0", "");
+
+                        let full_path = cmd_dir.join(&resolved);
+                        println!("[openclaw] Resolved JS path: {:?} exists={}", full_path, full_path.exists());
                         if full_path.exists() {
                             return Some(full_path);
+                        }
+
+                        // Also try the raw path in case it's absolute
+                        let raw_path = PathBuf::from(&resolved);
+                        if raw_path.is_absolute() && raw_path.exists() {
+                            return Some(raw_path);
                         }
                     }
                 }
@@ -129,39 +166,60 @@ fn find_openclaw_js() -> Option<PathBuf> {
         }
     }
 
-    // 2. Fallback: common npm global paths
-    let fallbacks = [
-        npm_prefix.join("node_modules").join("openclaw").join("dist").join("cli.js"),
-        npm_prefix.join("node_modules").join("openclaw").join("dist").join("index.js"),
-        npm_prefix.join("node_modules").join("openclaw").join("bin").join("openclaw.js"),
-    ];
-    for fb in &fallbacks {
-        println!("[openclaw] Checking fallback: {:?} exists={}", fb, fb.exists());
-        if fb.exists() {
-            return Some(fb.clone());
-        }
+    // Fallback: scan node_modules in common locations
+    let mut search_dirs: Vec<PathBuf> = Vec::new();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        search_dirs.push(PathBuf::from(&appdata).join("npm"));
+    }
+    // pnpm global
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        search_dirs.push(PathBuf::from(&localappdata).join("pnpm").join("global").join("5"));
+        search_dirs.push(PathBuf::from(&localappdata).join("pnpm"));
     }
 
-    // 3. Also check global node_modules from PATH
-    if let Ok(path_env) = std::env::var("PATH") {
-        for dir in path_env.split(';') {
-            if dir.is_empty() { continue; }
-            let p = PathBuf::from(dir);
-            // Check if dir itself contains openclaw.cmd
-            let cmd_in_dir = p.join("openclaw.cmd");
-            if cmd_in_dir.exists() && p != npm_prefix {
-                // Try to find node_modules relative to this dir
-                let js = p.join("node_modules").join("openclaw").join("dist").join("cli.js");
-                if js.exists() {
-                    println!("[openclaw] Found JS via PATH dir: {:?}", js);
-                    return Some(js);
-                }
+    let js_subpaths = [
+        "node_modules/openclaw/dist/cli.js",
+        "node_modules/openclaw/dist/index.js",
+        "node_modules/.pnpm/openclaw/node_modules/openclaw/dist/cli.js",
+    ];
+
+    for dir in &search_dirs {
+        for sub in &js_subpaths {
+            let full = dir.join(sub);
+            println!("[openclaw] Checking: {:?} exists={}", full, full.exists());
+            if full.exists() {
+                return Some(full);
             }
         }
     }
 
-    eprintln!("[openclaw] openclaw JS entry NOT FOUND");
+    eprintln!("[openclaw] openclaw JS entry NOT FOUND after exhaustive search");
     None
+}
+
+/// Extract a JS file path from a .cmd line fragment ending with ".js"
+#[cfg(target_os = "windows")]
+fn extract_js_path(fragment: &str) -> String {
+    // Work backwards from the end to find the path start
+    // Paths are delimited by quotes, spaces, or line start
+    let trimmed = fragment.trim();
+
+    // Remove surrounding quotes
+    let s = trimmed.trim_matches('"').trim_matches('\'');
+
+    // Find the last occurrence of a path-like start
+    // Usually: node_modules\..., or an absolute path like C:\...
+    if let Some(idx) = s.rfind("node_modules") {
+        return s[idx..].to_string();
+    }
+
+    // Check for absolute path (C:\...)
+    if s.len() >= 3 && s.as_bytes()[1] == b':' {
+        return s.to_string();
+    }
+
+    // Return the whole thing as-is
+    s.to_string()
 }
 
 /// Spawn a completely hidden process on Windows.
@@ -190,13 +248,25 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     {
         let node = find_node_exe()
             .ok_or("Cannot find node.exe. Is Node.js installed and in PATH?")?;
-        let js = find_openclaw_js()
-            .ok_or("Cannot find openclaw JS entry. Is openclaw installed (npm i -g openclaw)?")?;
 
-        let js_str = js.to_string_lossy().to_string();
-        let mut full_args: Vec<&str> = vec![&js_str];
-        full_args.extend_from_slice(args);
-        return spawn_hidden(&node, &full_args);
+        // Strategy: try direct JS entry first, fallback to node -e require('openclaw')
+        if let Some(js) = find_openclaw_js() {
+            let js_str = js.to_string_lossy().to_string();
+            let mut full_args: Vec<&str> = vec![&js_str];
+            full_args.extend_from_slice(args);
+            return spawn_hidden(&node, &full_args);
+        }
+
+        // Fallback: use node -e to require openclaw's CLI
+        // This works regardless of how openclaw was installed (npm, pnpm, volta, etc.)
+        println!("[openclaw] JS entry not found directly, using node -e fallback");
+        let args_json: Vec<String> = args.iter().map(|a| format!("\"{}\"", a)).collect();
+        let script = format!(
+            "process.argv=[...process.argv,{}];require('openclaw/dist/cli.js')",
+            args_json.join(",")
+        );
+        let script_leaked: &'static str = Box::leak(script.into_boxed_str());
+        return spawn_hidden(&node, &["-e", script_leaked]);
     }
 
     #[cfg(not(target_os = "windows"))]
