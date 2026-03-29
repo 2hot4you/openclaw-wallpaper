@@ -6,55 +6,120 @@ const DEFAULT_PORT: u16 = 18789;
 
 // ─── Windows: Hidden Process Execution ──────────────────────
 
-/// On Windows, find node.exe by scanning known paths + PATH env var.
-/// Never calls external commands (no `where`, no `.cmd`).
+/// On Windows, find node.exe by scanning PATH + well-known locations.
+/// Never calls external commands.
 #[cfg(target_os = "windows")]
 fn find_node_exe() -> Option<PathBuf> {
-    // 1. Check PATH env var entries directly (no subprocess!)
+    let mut searched: Vec<String> = Vec::new();
+
+    // 1. PATH env var
     if let Ok(path_env) = std::env::var("PATH") {
         for dir in path_env.split(';') {
+            if dir.is_empty() { continue; }
             let candidate = PathBuf::from(dir).join("node.exe");
             if candidate.exists() {
+                println!("[openclaw] Found node.exe via PATH: {:?}", candidate);
                 return Some(candidate);
+            }
+        }
+        searched.push(format!("PATH ({} entries)", path_env.split(';').count()));
+    }
+
+    // 2. Well-known locations
+    let mut well_known: Vec<PathBuf> = Vec::new();
+
+    // nvm-windows
+    if let Ok(symlink) = std::env::var("NVM_SYMLINK") {
+        well_known.push(PathBuf::from(&symlink).join("node.exe"));
+    }
+    if let Ok(nvm_home) = std::env::var("NVM_HOME") {
+        // nvm-windows stores versions in NVM_HOME\vX.X.X\node.exe
+        if let Ok(entries) = std::fs::read_dir(&nvm_home) {
+            for entry in entries.flatten() {
+                let p = entry.path().join("node.exe");
+                if p.exists() {
+                    well_known.push(p);
+                }
             }
         }
     }
 
-    // 2. Well-known locations
-    let extras = [
-        std::env::var("NVM_SYMLINK").ok().map(|p| PathBuf::from(p).join("node.exe")),
-        Some(PathBuf::from(r"C:\Program Files\nodejs\node.exe")),
-        std::env::var("ProgramFiles").ok().map(|p| PathBuf::from(p).join("nodejs").join("node.exe")),
-    ];
-    for c in extras.iter().flatten() {
+    // Standard installs
+    well_known.push(PathBuf::from(r"C:\Program Files\nodejs\node.exe"));
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        well_known.push(PathBuf::from(&pf).join("nodejs").join("node.exe"));
+    }
+
+    // User-local installs (fnm, volta, nvm-windows symlink)
+    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+        // fnm
+        let fnm = PathBuf::from(&localappdata).join("fnm_multishells");
+        if fnm.exists() {
+            if let Ok(entries) = std::fs::read_dir(&fnm) {
+                for entry in entries.flatten() {
+                    let p = entry.path().join("node.exe");
+                    if p.exists() {
+                        well_known.push(p);
+                    }
+                }
+            }
+        }
+        // Volta
+        let volta = PathBuf::from(&localappdata).join("Volta").join("bin").join("node.exe");
+        well_known.push(volta);
+    }
+
+    // User profile .nvm (nvm-windows default)
+    if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        let nvm_default = PathBuf::from(&userprofile).join(".nvm");
+        if nvm_default.exists() {
+            if let Ok(entries) = std::fs::read_dir(&nvm_default) {
+                for entry in entries.flatten() {
+                    let p = entry.path().join("node.exe");
+                    if p.exists() {
+                        well_known.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    for c in &well_known {
         if c.exists() {
+            println!("[openclaw] Found node.exe at well-known path: {:?}", c);
             return Some(c.clone());
         }
     }
 
+    searched.push(format!("well-known ({} paths)", well_known.len()));
+    eprintln!("[openclaw] node.exe NOT FOUND. Searched: {}", searched.join(", "));
     None
 }
 
-/// Find the openclaw JS entry point by reading the .cmd wrapper
-/// or checking known npm global paths. No subprocesses.
+/// Find the openclaw JS entry point. No subprocesses.
 #[cfg(target_os = "windows")]
 fn find_openclaw_js() -> Option<PathBuf> {
     let appdata = std::env::var("APPDATA").unwrap_or_default();
     let npm_prefix = PathBuf::from(&appdata).join("npm");
+
+    // 1. Parse the .cmd wrapper to find the JS entry
     let cmd_path = npm_prefix.join("openclaw.cmd");
+    println!("[openclaw] Looking for cmd wrapper: {:?} exists={}", cmd_path, cmd_path.exists());
 
     if cmd_path.exists() {
-        // Parse the .cmd file to extract the JS entry path.
-        // npm-generated .cmd files look like:
-        //   @IF EXIST "%~dp0\node.exe" ( "%~dp0\node.exe" "%~dp0\node_modules\openclaw\dist\cli.js" %* ) ELSE (...)
-        //   or: @"%~dp0\node_modules\openclaw\dist\cli.js" %*
         if let Ok(content) = std::fs::read_to_string(&cmd_path) {
+            println!("[openclaw] openclaw.cmd content:\n{}", content);
             for line in content.lines() {
                 if let Some(idx) = line.find("node_modules") {
                     let rest = &line[idx..];
                     if let Some(js_end) = rest.find(".js") {
-                        let rel_path = rest[..js_end + 3].replace("\\\\", "\\");
+                        let rel_path = rest[..js_end + 3]
+                            .replace("\\\\", "\\")
+                            .replace("\"", "")
+                            .trim()
+                            .to_string();
                         let full_path = npm_prefix.join(&rel_path);
+                        println!("[openclaw] Extracted JS path: {:?} exists={}", full_path, full_path.exists());
                         if full_path.exists() {
                             return Some(full_path);
                         }
@@ -64,22 +129,48 @@ fn find_openclaw_js() -> Option<PathBuf> {
         }
     }
 
-    // Fallback: common npm global structure
-    let common = npm_prefix.join("node_modules").join("openclaw").join("dist").join("cli.js");
-    if common.exists() {
-        return Some(common);
+    // 2. Fallback: common npm global paths
+    let fallbacks = [
+        npm_prefix.join("node_modules").join("openclaw").join("dist").join("cli.js"),
+        npm_prefix.join("node_modules").join("openclaw").join("dist").join("index.js"),
+        npm_prefix.join("node_modules").join("openclaw").join("bin").join("openclaw.js"),
+    ];
+    for fb in &fallbacks {
+        println!("[openclaw] Checking fallback: {:?} exists={}", fb, fb.exists());
+        if fb.exists() {
+            return Some(fb.clone());
+        }
     }
 
+    // 3. Also check global node_modules from PATH
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(';') {
+            if dir.is_empty() { continue; }
+            let p = PathBuf::from(dir);
+            // Check if dir itself contains openclaw.cmd
+            let cmd_in_dir = p.join("openclaw.cmd");
+            if cmd_in_dir.exists() && p != npm_prefix {
+                // Try to find node_modules relative to this dir
+                let js = p.join("node_modules").join("openclaw").join("dist").join("cli.js");
+                if js.exists() {
+                    println!("[openclaw] Found JS via PATH dir: {:?}", js);
+                    return Some(js);
+                }
+            }
+        }
+    }
+
+    eprintln!("[openclaw] openclaw JS entry NOT FOUND");
     None
 }
 
 /// Spawn a completely hidden process on Windows.
-/// Uses CREATE_NO_WINDOW + DETACHED_PROCESS to ensure zero console windows.
 #[cfg(target_os = "windows")]
 fn spawn_hidden(program: &PathBuf, args: &[&str]) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    // CREATE_NO_WINDOW (0x08000000) | DETACHED_PROCESS (0x00000008)
-    const FLAGS: u32 = 0x08000008;
+    const FLAGS: u32 = 0x08000008; // CREATE_NO_WINDOW | DETACHED_PROCESS
+
+    println!("[openclaw] spawn_hidden: {:?} {:?}", program, args);
 
     Command::new(program)
         .args(args)
@@ -93,8 +184,7 @@ fn spawn_hidden(program: &PathBuf, args: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
-/// Run openclaw CLI with args. On Windows, uses node.exe directly
-/// to avoid .cmd console window flash.
+/// Run openclaw CLI with args, completely hidden on Windows.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -103,7 +193,8 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
         let js = find_openclaw_js()
             .ok_or("Cannot find openclaw JS entry. Is openclaw installed (npm i -g openclaw)?")?;
 
-        let mut full_args: Vec<&str> = vec![js.to_str().unwrap_or("")];
+        let js_str = js.to_string_lossy().to_string();
+        let mut full_args: Vec<&str> = vec![&js_str];
         full_args.extend_from_slice(args);
         return spawn_hidden(&node, &full_args);
     }
@@ -122,7 +213,7 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     }
 }
 
-// ─── Non-Windows helpers ────────────────────────────────────
+// ─── Non-Windows ────────────────────────────────────────────
 
 #[cfg(not(target_os = "windows"))]
 fn find_openclaw_bin() -> String {
