@@ -144,8 +144,10 @@ export const ChatPanel: React.FC = () => {
   return (
     <div
       style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
         width: PANEL_WIDTH,
-        minWidth: PANEL_WIDTH,
         height: "100vh",
         background: COLORS.bg,
         borderLeft: `2px solid ${COLORS.borderDim}`,
@@ -153,6 +155,7 @@ export const ChatPanel: React.FC = () => {
         flexDirection: "column",
         zIndex: 100,
         animation: "slideInRight 0.2s ease-out",
+        boxShadow: "-4px 0 20px rgba(0,0,0,0.5)",
       }}
     >
       {/* Header */}

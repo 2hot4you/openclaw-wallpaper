@@ -321,16 +321,17 @@ export const MainWindow: React.FC = () => {
         height: "100vh",
         overflow: "hidden",
         background: "#2a2a3d",
-        display: "flex",
       }}
     >
-      {/* Phaser canvas container — takes remaining width */}
+      {/* Phaser canvas container — always full size */}
       <div
         ref={containerRef}
         style={{
-          flex: 1,
-          position: "relative",
-          height: "100vh",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
           overflow: "hidden",
         }}
       >
