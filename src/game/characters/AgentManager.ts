@@ -333,10 +333,9 @@ export class AgentManager {
 
   private spawnAgent(session: SessionData): AgentSprite | null {
     const displayName = session.label ?? session.agentId ?? session.key.split(":").pop() ?? "agent";
+    // Spawn at door
     const spriteConfig = CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
     this.nextSpriteIndex++;
-
-    const isMain = this.isMainAgent(session.key);
 
     // All agents spawn at the door
     const spawnX = this.doorPosition.x;
@@ -345,7 +344,7 @@ export class AgentManager {
     const agent = new AgentSprite(
       this.scene, session.key, displayName, spriteConfig.key,
       spawnX, spawnY,
-      !isMain, // subagents visible immediately (walk in), boss pop-in at door then walk
+      true, // all agents spawn visible at door and walk in
     );
 
     agent.setClickHandler(this._internalClickHandler);
