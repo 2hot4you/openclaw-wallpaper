@@ -35,20 +35,20 @@ fn find_openclaw_bin() -> String {
 }
 
 /// Run a command completely hidden on Windows.
-/// Uses cmd.exe /c with CREATE_NO_WINDOW to prevent any console window flash.
+/// Uses CREATE_NO_WINDOW flag to prevent any console window flash.
 #[cfg(target_os = "windows")]
-fn run_hidden(program: &str, args: &str) -> Result<(), String> {
+fn run_hidden(program: &str, args: &[&str]) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    Command::new("cmd.exe")
-        .args(["/c", &format!("\"{}\" {}", program, args)])
+    Command::new(program)
+        .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to run hidden command: {}", e))?;
+        .map_err(|e| format!("Failed to run hidden command '{}': {}", program, e))?;
 
     Ok(())
 }
@@ -57,9 +57,8 @@ fn run_hidden(program: &str, args: &str) -> Result<(), String> {
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let args_str = args.join(" ");
         let bin = find_openclaw_bin();
-        return run_hidden(&bin, &args_str);
+        return run_hidden(&bin, args);
     }
 
     #[cfg(not(target_os = "windows"))]
