@@ -77,7 +77,7 @@ export class AgentManager {
   /** Entrance position */
   private entrancePosition: { x: number; y: number } = { x: ENTRANCE_X, y: 672 };
 
-  /** Waypoints for path from entrance to work area (ordered) */
+  /** Global waypoints (shared by all agents) */
   private waypoints: Array<{ x: number; y: number }> = [];
 
   constructor(scene: OfficeScene) {
@@ -274,11 +274,12 @@ export class AgentManager {
       // Unknown names are ignored
     }
 
-    // Parse POIs for boss rest seat, entrance, and waypoints
-    const rawWaypoints: Array<{ name: string; x: number; y: number }> = [];
+    // Parse POIs for boss rest seat, entrance, waypoints, and disconnect points
+    const globalWaypoints: Array<{ name: string; x: number; y: number }> = [];
 
     for (const poi of this.scene.poiPositions) {
-      const nameLower = poi.name.toLowerCase();
+      const nameLower = poi.name.toLowerCase().trim();
+
       if (nameLower.startsWith("main_rest")) {
         this.bossRestSeat = {
           name: poi.name,
@@ -290,18 +291,30 @@ export class AgentManager {
       } else if (nameLower === "entrance" || nameLower === "door" || nameLower === "exit") {
         this.entrancePosition = { x: poi.x, y: poi.y };
         console.log("[AgentManager] Entrance from POI:", poi.name, this.entrancePosition);
+
+      } else if (nameLower.startsWith("subagent_disconnect") || nameLower === "disconnect") {
+        // Disconnect point = exit/entrance for subagents
+        this.entrancePosition = { x: poi.x, y: poi.y };
+        console.log("[AgentManager] Disconnect/entrance from POI:", poi.name, { x: poi.x, y: poi.y });
+
+      } else if (nameLower.startsWith("subagent_waypoint_#") || nameLower.startsWith("subagent_waypoint_")) {
+        // Per-seat waypoint: subagent_waypoint_#1, subagent_waypoint_#2, etc.
+        // These are GLOBAL waypoints shared by all subagents (numbered for ordering)
+        globalWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
+
       } else if (nameLower.startsWith("waypoint")) {
-        // waypoint_1, waypoint_2, etc. — sorted by name
-        rawWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
+        // Legacy global waypoints: waypoint_1, waypoint_2, etc.
+        globalWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
       }
     }
 
-    // Sort waypoints by name (waypoint_1 < waypoint_2 < ...)
-    rawWaypoints.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    this.waypoints = rawWaypoints.map(w => ({ x: w.x, y: w.y }));
+    // Sort global waypoints by name (natural numeric sort)
+    globalWaypoints.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    this.waypoints = globalWaypoints.map(w => ({ x: w.x, y: w.y }));
 
     if (this.waypoints.length > 0) {
-      console.log("[AgentManager] Waypoints:", this.waypoints);
+      console.log("[AgentManager] Waypoints:", this.waypoints.map((w, i) =>
+        `${globalWaypoints[i]?.name} (${w.x.toFixed(0)},${w.y.toFixed(0)})`));
     }
 
     console.log(
