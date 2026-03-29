@@ -181,26 +181,11 @@ export class AgentManager {
     // Handle disappeared sessions → despawn
     for (const [key, agent] of this.agents) {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
-        const seatName = this.getSeatIndex(key);
         this.releaseAgent(key);
-
-        if (this.isMainAgent(key)) {
-          // Boss: walk back to door via current route (reversed)
-          const currentRoute = agent.status === "working" ? this.bossWorkRoute : this.bossRestRoute;
-          const exitPath = this.resolveRoute([...currentRoute].reverse());
-          agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-        } else if (seatName) {
-          // Subagent: walk reverse route back to door
-          const routeNames = this.seatRoutes.get(seatName);
-          if (routeNames) {
-            const exitPath = this.resolveRoute([...routeNames].reverse());
-            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-          } else {
-            agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
-          }
-        } else {
-          agent.despawn();
-        }
+        // All agents walk straight to door and despawn.
+        // Walking waypoints in reverse from mid-path causes erratic movement,
+        // so we keep it simple: beeline to door, then fade out.
+        agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
       }
     }
 
