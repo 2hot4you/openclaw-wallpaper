@@ -181,11 +181,30 @@ export class AgentManager {
     // Handle disappeared sessions → despawn
     for (const [key, agent] of this.agents) {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
-        this.releaseAgent(key);
-        // All agents walk straight to door and despawn.
-        // Walking waypoints in reverse from mid-path causes erratic movement,
-        // so we keep it simple: beeline to door, then fade out.
-        agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
+        // Get seat info BEFORE releasing
+        const seatIdx = this.seatAssignments.get(key);
+
+        if (this.isMainAgent(key)) {
+          this.releaseAgent(key);
+          const route = agent.status === "working" ? this.bossWorkRoute : this.bossRestRoute;
+          const exitPath = this.resolveRoute([...route].reverse());
+          agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+        } else if (seatIdx !== undefined && seatIdx < this.subagentSeats.length) {
+          const seat = this.subagentSeats[seatIdx];
+          const routeNames = this.seatRoutes.get(seat.name);
+          this.releaseAgent(key);
+          if (routeNames && !agent.isMoving) {
+            // Seated — walk reverse route
+            const exitPath = this.resolveRoute([...routeNames].reverse());
+            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+          } else {
+            // Still walking in — direct to door
+            agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
+          }
+        } else {
+          this.releaseAgent(key);
+          agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
+        }
       }
     }
 
