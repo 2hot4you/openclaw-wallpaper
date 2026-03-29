@@ -12,12 +12,14 @@ pub mod win {
     use std::sync::Mutex;
 
     /// Marker string to detect end of command output.
-    const END_MARKER: &str = "___OPENCLAW_CMD_DONE___";
+    const END_MARKER: &str = "___OPENCLAW_SHELL_END___";
 
-    static SHELL: Mutex<Option<ShellProcess>> = Mutex::new(None);
+    static SHELL: Mutex<Option<HiddenShell>> = Mutex::new(None);
 
-    struct ShellProcess {
-        child: Child,
+    struct HiddenShell {
+        stdin: std::process::ChildStdin,
+        reader: BufReader<std::process::ChildStdout>,
+        _child: Child,
     }
 
     /// Initialize the hidden shell. Call once at app startup.
@@ -25,77 +27,89 @@ pub mod win {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        let child = Command::new("cmd.exe")
-            .args(["/K", "echo SHELL_READY"])  // /K keeps cmd alive
+        let mut child = Command::new("cmd.exe")
+            .args(["/Q", "/K"])  // /Q = quiet (no echo), /K = keep alive
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())  // merge stderr into stdout would be nice but cmd doesn't support it easily
+            .stderr(Stdio::null())
             .spawn()
             .map_err(|e| format!("Failed to spawn hidden shell: {}", e))?;
+
+        let stdin = child.stdin.take().ok_or("Failed to get shell stdin")?;
+        let stdout = child.stdout.take().ok_or("Failed to get shell stdout")?;
+        let reader = BufReader::new(stdout);
 
         println!("[shell] Hidden cmd.exe started (pid={})", child.id());
 
         let mut guard = SHELL.lock().map_err(|e| e.to_string())?;
-        *guard = Some(ShellProcess { child });
+        *guard = Some(HiddenShell {
+            stdin,
+            reader,
+            _child: child,
+        });
+
+        // Drain any initial output
+        let _ = exec_inner_locked(guard.as_mut().unwrap(), "echo ready");
 
         Ok(())
     }
 
-    /// Execute a command in the hidden shell and return the output.
-    /// This is synchronous — call from a background thread if needed.
+    /// Execute a command and return its output (blocking).
     pub fn exec(command: &str) -> Result<String, String> {
         let mut guard = SHELL.lock().map_err(|e| e.to_string())?;
         let shell = guard.as_mut().ok_or("Hidden shell not initialized")?;
+        exec_inner_locked(shell, command)
+    }
 
-        let stdin = shell.child.stdin.as_mut().ok_or("Shell stdin closed")?;
-        let stdout = shell.child.stdout.as_mut().ok_or("Shell stdout closed")?;
+    fn exec_inner_locked(shell: &mut HiddenShell, command: &str) -> Result<String, String> {
+        // Write command followed by echo of end marker
+        let full = format!("{}\r\necho {}\r\n", command, END_MARKER);
+        shell.stdin.write_all(full.as_bytes())
+            .map_err(|e| format!("Shell write failed: {}", e))?;
+        shell.stdin.flush()
+            .map_err(|e| format!("Shell flush failed: {}", e))?;
 
-        // Write command + echo marker so we know when output ends
-        let full_cmd = format!("{}\r\necho {}\r\n", command, END_MARKER);
-        stdin.write_all(full_cmd.as_bytes())
-            .map_err(|e| format!("Failed to write to shell: {}", e))?;
-        stdin.flush()
-            .map_err(|e| format!("Failed to flush shell stdin: {}", e))?;
-
-        // Read output until we see the marker
-        let reader = BufReader::new(stdout);
+        // Read lines until we see the marker
         let mut output = String::new();
-        for line in reader.lines() {
-            match line {
-                Ok(l) => {
-                    if l.trim() == END_MARKER {
+        loop {
+            let mut line = String::new();
+            match shell.reader.read_line(&mut line) {
+                Ok(0) => return Err("Shell process ended unexpectedly".into()),
+                Ok(_) => {
+                    let trimmed = line.trim();
+                    if trimmed == END_MARKER {
                         break;
                     }
-                    // Skip the echo of our command itself
-                    if l.trim() == command.trim() || l.contains(END_MARKER) {
+                    // Skip echo of our own commands
+                    if trimmed.starts_with("echo ") && trimmed.contains(END_MARKER) {
                         continue;
                     }
-                    output.push_str(&l);
-                    output.push('\n');
+                    output.push_str(&line);
                 }
-                Err(e) => return Err(format!("Failed to read shell output: {}", e)),
+                Err(e) => return Err(format!("Shell read failed: {}", e)),
             }
         }
 
         Ok(output.trim().to_string())
     }
 
-    /// Execute a command in the hidden shell without waiting for output (fire-and-forget).
+    /// Execute a command without waiting for output (fire-and-forget).
+    /// Uses `start /B` to run in background within the hidden shell.
     pub fn exec_detached(command: &str) -> Result<(), String> {
         let mut guard = SHELL.lock().map_err(|e| e.to_string())?;
         let shell = guard.as_mut().ok_or("Hidden shell not initialized")?;
 
-        let stdin = shell.child.stdin.as_mut().ok_or("Shell stdin closed")?;
+        // `start /B` runs the command in the background within the same console
+        // session (no new window). The hidden shell's console is invisible,
+        // so everything stays hidden.
+        let full = format!("start /B {}\r\n", command);
+        shell.stdin.write_all(full.as_bytes())
+            .map_err(|e| format!("Shell write failed: {}", e))?;
+        shell.stdin.flush()
+            .map_err(|e| format!("Shell flush failed: {}", e))?;
 
-        // Just write the command, don't wait for output
-        let full_cmd = format!("{}\r\n", command);
-        stdin.write_all(full_cmd.as_bytes())
-            .map_err(|e| format!("Failed to write to shell: {}", e))?;
-        stdin.flush()
-            .map_err(|e| format!("Failed to flush shell stdin: {}", e))?;
-
-        println!("[shell] Fired: {}", command);
+        println!("[shell] Detached: {}", command);
         Ok(())
     }
 
@@ -103,7 +117,7 @@ pub mod win {
     pub fn shutdown() {
         if let Ok(mut guard) = SHELL.lock() {
             if let Some(mut shell) = guard.take() {
-                let _ = shell.child.kill();
+                let _ = writeln!(shell.stdin, "exit\r");
                 println!("[shell] Hidden shell terminated");
             }
         }
