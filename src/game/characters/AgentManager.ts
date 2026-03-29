@@ -240,6 +240,7 @@ export class AgentManager {
   // ── Position resolution ───────────────────────────
 
   private resolvePositions(): void {
+    // Default entrance (fallback)
     this.entrancePosition = {
       x: ENTRANCE_X,
       y: this.scene.mapHeight ? this.scene.mapHeight * ENTRANCE_Y_FRAC : 672,
@@ -266,7 +267,7 @@ export class AgentManager {
       // Unknown names are ignored
     }
 
-    // Parse POIs for boss rest seat
+    // Parse POIs for boss rest seat and entrance
     for (const poi of this.scene.poiPositions) {
       const nameLower = poi.name.toLowerCase();
       if (nameLower.startsWith("main_rest")) {
@@ -274,9 +275,13 @@ export class AgentManager {
           name: poi.name,
           x: poi.x,
           y: poi.y,
-          facing: "down", // Main_rest_face → facing the screen
+          facing: "down",
           originalIndex: -1,
         };
+      } else if (nameLower === "entrance" || nameLower === "door" || nameLower === "exit") {
+        // Use POI named "entrance", "door", or "exit" as the spawn/despawn point
+        this.entrancePosition = { x: poi.x, y: poi.y };
+        console.log("[AgentManager] Entrance from POI:", poi.name, this.entrancePosition);
       }
     }
 
