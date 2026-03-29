@@ -3,76 +3,77 @@ const DEFAULT_PORT: u16 = 18789;
 
 // ─── Hidden Process Execution ───────────────────────────────
 
-/// Run a command through the user's shell environment, completely hidden.
-///
-/// On Windows: Uses Win32 CreateProcessW with STARTUPINFO.wShowWindow = SW_HIDE.
-/// This spawns cmd.exe /c "command" with a hidden console window.
-/// Unlike CREATE_NO_WINDOW, this correctly handles .cmd files while
-/// keeping the window invisible.
-///
-/// This is the same technique used by Windows services and scheduled tasks
-/// to run console commands without visible windows.
+/// On Windows: find node.exe by scanning PATH env var directories.
+/// Pure filesystem check, no subprocess calls.
 #[cfg(target_os = "windows")]
-fn run_shell_hidden(command: &str) -> Result<(), String> {
-    use windows::Win32::System::Threading::{
-        CreateProcessW, STARTUPINFOW, PROCESS_INFORMATION,
-        STARTF_USESHOWWINDOW, CREATE_NEW_CONSOLE,
-    };
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::core::PWSTR;
-
-    // Build command line: cmd.exe /c "openclaw gateway start"
-    let cmd_line = format!("cmd.exe /c {}", command);
-    let mut cmd_wide: Vec<u16> = cmd_line.encode_utf16().chain(std::iter::once(0)).collect();
-
-    unsafe {
-        let mut si = STARTUPINFOW::default();
-        si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = 0; // SW_HIDE
-
-        let mut pi = PROCESS_INFORMATION::default();
-
-        let success = CreateProcessW(
-            None,                                       // lpApplicationName
-            Some(PWSTR(cmd_wide.as_mut_ptr())),          // lpCommandLine
-            None,                                       // lpProcessAttributes
-            None,                                       // lpThreadAttributes
-            false,                                      // bInheritHandles
-            CREATE_NEW_CONSOLE,            // dwCreationFlags - new console (but hidden via SW_HIDE)
-            None,                          // lpEnvironment (inherit)
-            None,                          // lpCurrentDirectory (inherit)
-            &si,                           // lpStartupInfo
-            &mut pi,                       // lpProcessInformation
-        );
-
-        if let Err(e) = success {
-            return Err(format!("CreateProcessW failed: {}", e));
+fn find_node_exe() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(';') {
+            if dir.is_empty() { continue; }
+            let candidate = PathBuf::from(dir).join("node.exe");
+            if candidate.exists() {
+                println!("[openclaw] Found node.exe: {:?}", candidate);
+                return Some(candidate);
+            }
         }
-
-        // Close handles (we don't wait for the process)
-        let _ = CloseHandle(pi.hProcess);
-        let _ = CloseHandle(pi.hThread);
     }
-
-    println!("[openclaw] Launched hidden: {}", cmd_line);
-    Ok(())
+    // Well-known fallbacks
+    let fallbacks = [
+        r"C:\Program Files\nodejs\node.exe",
+    ];
+    for fb in &fallbacks {
+        let p = PathBuf::from(fb);
+        if p.exists() {
+            println!("[openclaw] Found node.exe at fallback: {:?}", p);
+            return Some(p);
+        }
+    }
+    eprintln!("[openclaw] node.exe NOT FOUND in PATH");
+    None
 }
 
 /// Run openclaw CLI command, completely hidden on all platforms.
+///
+/// Windows strategy:
+///   1. Find node.exe (pure PATH scan, no subprocess)
+///   2. Run: node.exe -e "require('child_process').spawn('openclaw', [...args], {detached:true, stdio:'ignore'}).unref()"
+///   3. node.exe with CREATE_NO_WINDOW = zero console windows
+///   4. node's child_process.spawn inherits the shell environment and can find openclaw via PATH
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
-    let _cmd = format!("openclaw {}", args.join(" "));
-
     #[cfg(target_os = "windows")]
     {
-        return run_shell_hidden(&_cmd);
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let node = find_node_exe()
+            .ok_or("Cannot find node.exe in PATH. Is Node.js installed?")?;
+
+        // Build a JS one-liner that spawns openclaw detached
+        let args_js: Vec<String> = args.iter().map(|a| format!("'{}'", a)).collect();
+        let script = format!(
+            "require('child_process').spawn('openclaw',[{}],{{detached:true,stdio:'ignore',shell:true}}).unref()",
+            args_js.join(",")
+        );
+
+        println!("[openclaw] Running: {:?} -e '{}'", node, script);
+
+        std::process::Command::new(&node)
+            .args(["-e", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn node.exe: {}", e))?;
+
+        return Ok(());
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        use std::process::Command;
         let bin = find_openclaw_bin();
-        Command::new(&bin)
+        std::process::Command::new(&bin)
             .args(args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -82,8 +83,6 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
         Ok(())
     }
 }
-
-// ─── Non-Windows ────────────────────────────────────────────
 
 #[cfg(not(target_os = "windows"))]
 fn find_openclaw_bin() -> String {
