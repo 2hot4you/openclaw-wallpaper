@@ -77,6 +77,9 @@ export class AgentManager {
   /** Entrance position */
   private entrancePosition: { x: number; y: number } = { x: ENTRANCE_X, y: 672 };
 
+  /** Waypoints for path from entrance to work area (ordered) */
+  private waypoints: Array<{ x: number; y: number }> = [];
+
   constructor(scene: OfficeScene) {
     this.scene = scene;
     this.infoBubble = new InfoBubble(scene);
@@ -155,7 +158,11 @@ export class AgentManager {
         this.releaseAgent(key);
 
         if (this.isSubagent(key)) {
-          agent.walkThenDespawn(this.entrancePosition.x, this.entrancePosition.y);
+          agent.walkPathThenDespawn(
+            this.waypoints,
+            this.entrancePosition.x,
+            this.entrancePosition.y,
+          );
         } else {
           agent.despawn();
         }
@@ -267,7 +274,9 @@ export class AgentManager {
       // Unknown names are ignored
     }
 
-    // Parse POIs for boss rest seat and entrance
+    // Parse POIs for boss rest seat, entrance, and waypoints
+    const rawWaypoints: Array<{ name: string; x: number; y: number }> = [];
+
     for (const poi of this.scene.poiPositions) {
       const nameLower = poi.name.toLowerCase();
       if (nameLower.startsWith("main_rest")) {
@@ -279,10 +288,20 @@ export class AgentManager {
           originalIndex: -1,
         };
       } else if (nameLower === "entrance" || nameLower === "door" || nameLower === "exit") {
-        // Use POI named "entrance", "door", or "exit" as the spawn/despawn point
         this.entrancePosition = { x: poi.x, y: poi.y };
         console.log("[AgentManager] Entrance from POI:", poi.name, this.entrancePosition);
+      } else if (nameLower.startsWith("waypoint")) {
+        // waypoint_1, waypoint_2, etc. — sorted by name
+        rawWaypoints.push({ name: poi.name, x: poi.x, y: poi.y });
       }
+    }
+
+    // Sort waypoints by name (waypoint_1 < waypoint_2 < ...)
+    rawWaypoints.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    this.waypoints = rawWaypoints.map(w => ({ x: w.x, y: w.y }));
+
+    if (this.waypoints.length > 0) {
+      console.log("[AgentManager] Waypoints:", this.waypoints);
     }
 
     console.log(
@@ -418,11 +437,12 @@ export class AgentManager {
       return;
     }
 
-    // Subagent: assign a seat and walk there from entrance
+    // Subagent: assign a seat and walk there via waypoints
     const seatIdx = this.assignSeat(sessionKey);
     if (seatIdx !== null && seatIdx < this.subagentSeats.length) {
       const seat = this.subagentSeats[seatIdx];
-      agent.moveTo(
+      agent.moveAlongPath(
+        this.waypoints,
         seat.x,
         seat.y + SEAT_Y_OFFSET,
         undefined,

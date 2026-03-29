@@ -272,6 +272,72 @@ export class AgentSprite {
   }
 
   /**
+   * Move along a series of waypoints, then to the final destination.
+   * Each segment uses moveTo, chained via onComplete callbacks.
+   */
+  moveAlongPath(
+    waypoints: Array<{ x: number; y: number }>,
+    finalX: number,
+    finalY: number,
+    onComplete?: () => void,
+    arrivalFacing?: Direction,
+  ): void {
+    if (this._isDespawned || !this.spawnComplete) return;
+
+    if (waypoints.length === 0) {
+      // No waypoints, go direct
+      this.moveTo(finalX, finalY, onComplete, arrivalFacing);
+      return;
+    }
+
+    // Chain: waypoint[0] → waypoint[1] → ... → final
+    const moveToNext = (index: number) => {
+      if (index < waypoints.length) {
+        const wp = waypoints[index];
+        this.moveTo(wp.x, wp.y, () => moveToNext(index + 1));
+      } else {
+        this.moveTo(finalX, finalY, onComplete, arrivalFacing);
+      }
+    };
+
+    moveToNext(0);
+  }
+
+  /**
+   * Walk along waypoints (reversed) back to a target, then despawn.
+   */
+  walkPathThenDespawn(
+    waypoints: Array<{ x: number; y: number }>,
+    targetX: number,
+    targetY: number,
+  ): void {
+    if (this._isDespawned) return;
+    this._isDespawning = true;
+    this.hideEmote();
+    this.stopWorkBob();
+    this.stopErrorFlash();
+
+    // Reverse waypoints for exit path
+    const reversed = [...waypoints].reverse();
+
+    if (reversed.length === 0) {
+      this.moveTo(targetX, targetY, () => this.despawn());
+      return;
+    }
+
+    const moveToNext = (index: number) => {
+      if (index < reversed.length) {
+        const wp = reversed[index];
+        this.moveTo(wp.x, wp.y, () => moveToNext(index + 1));
+      } else {
+        this.moveTo(targetX, targetY, () => this.despawn());
+      }
+    };
+
+    moveToNext(0);
+  }
+
+  /**
    * Despawn with fade-out animation (immediate, no walk).
    */
   despawn(): void {
