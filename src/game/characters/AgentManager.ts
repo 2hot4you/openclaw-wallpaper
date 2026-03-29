@@ -178,11 +178,13 @@ export class AgentManager {
     if (agents) this.lastAgents = agents;
     const sessionKeys = new Set(sessions.map((s) => s.key));
 
-    // Handle disappeared sessions → despawn
+    // Handle disappeared sessions → despawn via reverse route
     for (const [key, agent] of this.agents) {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
-        // Get seat info BEFORE releasing
         const seatIdx = this.seatAssignments.get(key);
+
+        // Stop any current movement first
+        agent.stopCurrentMovement();
 
         if (this.isMainAgent(key)) {
           this.releaseAgent(key);
@@ -193,12 +195,12 @@ export class AgentManager {
           const seat = this.subagentSeats[seatIdx];
           const routeNames = this.seatRoutes.get(seat.name);
           this.releaseAgent(key);
-          if (routeNames && !agent.isMoving) {
-            // Seated — walk reverse route
+          if (routeNames) {
+            // Teleport to seat position first, then walk reverse route
+            agent.setPosition(seat.x, seat.y + SEAT_Y_OFFSET);
             const exitPath = this.resolveRoute([...routeNames].reverse());
             agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
           } else {
-            // Still walking in — direct to door
             agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
           }
         } else {

@@ -57,6 +57,9 @@ export const MainWindow: React.FC = () => {
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const setWallpaperSupported = useAppStore((s) => s.setWallpaperSupported);
 
+  // Flag to suppress session refresh during stop/restart
+  const stopPendingRef = useRef(false);
+
   // Track connection status for scene sync
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
   connectionStatusRef.current = connectionStatus;
@@ -243,7 +246,14 @@ export const MainWindow: React.FC = () => {
         unlisteners.push(u2);
 
         const u3 = await listen("tray-stop-openclaw", async () => {
-          try { await stopOpenClaw(); disconnect(); } catch { /* Ignore */ }
+          try {
+            stopPendingRef.current = true;
+            // Disconnect first to stop receiving new session data
+            disconnect();
+            await stopOpenClaw();
+            // Keep suppressing refresh for 10s to let Gateway fully stop
+            setTimeout(() => { stopPendingRef.current = false; }, 10000);
+          } catch { /* Ignore */ }
         });
         unlisteners.push(u3);
 
@@ -309,7 +319,11 @@ export const MainWindow: React.FC = () => {
 
   useEffect(() => {
     if (connectionStatus !== "connected") return;
-    const timer = setInterval(() => refreshSessions(), 3000);
+    const timer = setInterval(() => {
+      if (!stopPendingRef.current) {
+        refreshSessions();
+      }
+    }, 3000);
     return () => clearInterval(timer);
   }, [connectionStatus, refreshSessions]);
 

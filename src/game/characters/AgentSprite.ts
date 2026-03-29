@@ -494,6 +494,21 @@ export class AgentSprite {
   }
 
   /**
+   * Public: stop current movement (for despawn preparation).
+   */
+  stopCurrentMovement(): void {
+    this.stopMovement();
+  }
+
+  /**
+   * Teleport to a position instantly (for despawn preparation).
+   */
+  setPosition(x: number, y: number): void {
+    this.sprite.setPosition(x, y);
+    this.updateAttachedPositions();
+  }
+
+  /**
    * Update the emote bubble based on current status.
    */
   private updateEmote(): void {
