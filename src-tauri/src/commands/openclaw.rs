@@ -10,6 +10,28 @@ const DEFAULT_PORT: u16 = 18789;
 /// window from appearing, including for .cmd files it spawns.
 /// We launch PowerShell itself with CREATE_NO_WINDOW so even PowerShell's
 /// own window never appears.
+/// Log child process output in background thread.
+#[cfg(target_os = "windows")]
+fn log_child_output(child: std::process::Child) {
+    std::thread::spawn(move || {
+        let output = child.wait_with_output();
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if !stdout.trim().is_empty() {
+                    println!("[openclaw] stdout: {}", stdout.trim());
+                }
+                if !stderr.trim().is_empty() {
+                    eprintln!("[openclaw] stderr: {}", stderr.trim());
+                }
+                println!("[openclaw] exit: {:?}", o.status);
+            }
+            Err(e) => eprintln!("[openclaw] wait error: {}", e),
+        }
+    });
+}
+
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -17,11 +39,48 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         let args_str = args.join(" ");
-        println!("[openclaw] Launching via PowerShell: openclaw {}", args_str);
 
-        // Simply invoke openclaw directly in PowerShell.
-        // PowerShell can resolve openclaw from PATH (handles .cmd too).
-        // CREATE_NO_WINDOW on powershell.exe = no console window at all.
+        // Special handling for gateway start/stop/restart:
+        // openclaw uses a Windows Scheduled Task "OpenClaw Gateway" internally.
+        // Running `openclaw gateway start` via CLI triggers schtasks which opens a cmd window.
+        // Instead, we directly invoke schtasks.exe to start/stop the task — zero windows.
+        if args.len() >= 2 && args[0] == "gateway" {
+            let task_name = "OpenClaw Gateway";
+            match args[1] {
+                "start" | "restart" => {
+                    println!("[openclaw] Starting scheduled task '{}' directly", task_name);
+                    let child = std::process::Command::new("schtasks.exe")
+                        .args(["/Run", "/TN", task_name])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .spawn()
+                        .map_err(|e| format!("schtasks spawn failed: {}", e))?;
+
+                    log_child_output(child);
+                    return Ok(());
+                }
+                "stop" => {
+                    println!("[openclaw] Stopping scheduled task '{}' directly", task_name);
+                    let child = std::process::Command::new("schtasks.exe")
+                        .args(["/End", "/TN", task_name])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .spawn()
+                        .map_err(|e| format!("schtasks spawn failed: {}", e))?;
+
+                    log_child_output(child);
+                    return Ok(());
+                }
+                _ => {} // fall through to PowerShell for other subcommands
+            }
+        }
+
+        // Fallback for other commands: use PowerShell
+        println!("[openclaw] Launching via PowerShell: openclaw {}", args_str);
         let ps_script = format!("& openclaw {}", args_str);
 
         let child = std::process::Command::new("powershell.exe")
@@ -38,25 +97,7 @@ pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to spawn powershell: {}", e))?;
 
-        // Log output in background for debugging
-        std::thread::spawn(move || {
-            let output = child.wait_with_output();
-            match output {
-                Ok(o) => {
-                    let stdout = String::from_utf8_lossy(&o.stdout);
-                    let stderr = String::from_utf8_lossy(&o.stderr);
-                    if !stdout.trim().is_empty() {
-                        println!("[openclaw] PS stdout: {}", stdout.trim());
-                    }
-                    if !stderr.trim().is_empty() {
-                        eprintln!("[openclaw] PS stderr: {}", stderr.trim());
-                    }
-                    println!("[openclaw] PS exit: {:?}", o.status);
-                }
-                Err(e) => eprintln!("[openclaw] PS wait error: {}", e),
-            }
-        });
-
+        log_child_output(child);
         return Ok(());
     }
 
