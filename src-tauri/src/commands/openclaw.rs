@@ -101,23 +101,24 @@ fn shell_split(s: &str) -> Vec<String> {
     result
 }
 
-/// Stop the Gateway by killing the node process running openclaw gateway.
+/// Stop the Gateway.
 #[cfg(target_os = "windows")]
 fn stop_gateway_hidden() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    // Try stopping via schtasks first
+    // Stop via schtasks
     let _ = std::process::Command::new("schtasks.exe")
         .args(["/End", "/TN", "OpenClaw Gateway"])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
-    // Also try HTTP shutdown endpoint
-    // (non-blocking, best effort)
-    let _ = reqwest::blocking::Client::new()
-        .post(format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT))
-        .send();
+    // Also kill any node process running the gateway
+    // taskkill is more reliable than schtasks /End
+    let _ = std::process::Command::new("taskkill.exe")
+        .args(["/F", "/FI", "WINDOWTITLE eq OpenClaw Gateway"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
 
     Ok(())
 }
@@ -206,14 +207,25 @@ pub async fn start_openclaw() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
+    // Try graceful shutdown via HTTP first (async, no blocking issue)
+    let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
+    let _ = reqwest::Client::new().post(&url).send().await;
+
+    // Also run the CLI stop
     let _ = run_openclaw_hidden(&["gateway", "stop"]);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    let _ = run_openclaw_hidden(&["gateway", "restart"]);
-    Ok(())
+    // Stop first
+    let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
+    let _ = reqwest::Client::new().post(&url).send().await;
+    let _ = run_openclaw_hidden(&["gateway", "stop"]);
+
+    // Wait a moment then start
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    run_openclaw_hidden(&["gateway", "start"])
 }
 
 #[tauri::command]
