@@ -3,69 +3,43 @@ const DEFAULT_PORT: u16 = 18789;
 
 // ─── Hidden Process Execution ───────────────────────────────
 
-/// On Windows: find node.exe by scanning PATH env var directories.
-/// Pure filesystem check, no subprocess calls.
-#[cfg(target_os = "windows")]
-fn find_node_exe() -> Option<std::path::PathBuf> {
-    use std::path::PathBuf;
-    if let Ok(path_env) = std::env::var("PATH") {
-        for dir in path_env.split(';') {
-            if dir.is_empty() { continue; }
-            let candidate = PathBuf::from(dir).join("node.exe");
-            if candidate.exists() {
-                println!("[openclaw] Found node.exe: {:?}", candidate);
-                return Some(candidate);
-            }
-        }
-    }
-    // Well-known fallbacks
-    let fallbacks = [
-        r"C:\Program Files\nodejs\node.exe",
-    ];
-    for fb in &fallbacks {
-        let p = PathBuf::from(fb);
-        if p.exists() {
-            println!("[openclaw] Found node.exe at fallback: {:?}", p);
-            return Some(p);
-        }
-    }
-    eprintln!("[openclaw] node.exe NOT FOUND in PATH");
-    None
-}
-
 /// Run openclaw CLI command, completely hidden on all platforms.
 ///
-/// Windows strategy:
-///   1. Find node.exe (pure PATH scan, no subprocess)
-///   2. Run: node.exe -e "require('child_process').spawn('openclaw', [...args], {detached:true, stdio:'ignore'}).unref()"
-///   3. node.exe with CREATE_NO_WINDOW = zero console windows
-///   4. node's child_process.spawn inherits the shell environment and can find openclaw via PATH
+/// Windows: Uses powershell.exe -WindowStyle Hidden -Command "openclaw ..."
+/// PowerShell natively supports -WindowStyle Hidden which prevents ANY
+/// window from appearing, including for .cmd files it spawns.
+/// We launch PowerShell itself with CREATE_NO_WINDOW so even PowerShell's
+/// own window never appears.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        let node = find_node_exe()
-            .ok_or("Cannot find node.exe in PATH. Is Node.js installed?")?;
+        let command = format!("openclaw {}", args.join(" "));
+        println!("[openclaw] Launching via PowerShell hidden: {}", command);
 
-        // Build a JS one-liner that spawns openclaw detached
-        let args_js: Vec<String> = args.iter().map(|a| format!("'{}'", a)).collect();
-        let script = format!(
-            "require('child_process').spawn('openclaw',[{}],{{detached:true,stdio:'ignore',shell:true}}).unref()",
-            args_js.join(",")
+        // Start-Process with -WindowStyle Hidden ensures the spawned process
+        // (openclaw.cmd -> node.exe) also has no window.
+        // -NoProfile speeds up PowerShell startup.
+        let ps_command = format!(
+            "Start-Process -FilePath 'openclaw' -ArgumentList '{}' -WindowStyle Hidden -NoNewWindow",
+            args.join(" ")
         );
 
-        println!("[openclaw] Running: {:?} -e '{}'", node, script);
-
-        std::process::Command::new(&node)
-            .args(["-e", &script])
+        std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle", "Hidden",
+                "-Command", &ps_command,
+            ])
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|e| format!("Failed to spawn node.exe: {}", e))?;
+            .map_err(|e| format!("Failed to spawn powershell: {}", e))?;
 
         return Ok(());
     }
