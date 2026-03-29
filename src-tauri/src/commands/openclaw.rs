@@ -34,11 +34,11 @@ fn run_shell_hidden(command: &str) -> Result<(), String> {
         let mut pi = PROCESS_INFORMATION::default();
 
         let success = CreateProcessW(
-            None,                          // lpApplicationName
-            PWSTR(cmd_wide.as_mut_ptr()),   // lpCommandLine
-            None,                          // lpProcessAttributes
-            None,                          // lpThreadAttributes
-            false,                         // bInheritHandles
+            None,                                       // lpApplicationName
+            Some(PWSTR(cmd_wide.as_mut_ptr())),          // lpCommandLine
+            None,                                       // lpProcessAttributes
+            None,                                       // lpThreadAttributes
+            false,                                      // bInheritHandles
             CREATE_NEW_CONSOLE,            // dwCreationFlags - new console (but hidden via SW_HIDE)
             None,                          // lpEnvironment (inherit)
             None,                          // lpCurrentDirectory (inherit)
