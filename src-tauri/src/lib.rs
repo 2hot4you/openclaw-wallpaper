@@ -2,6 +2,8 @@ mod commands;
 mod tray;
 #[cfg(target_os = "windows")]
 mod mouse_hook;
+#[cfg(target_os = "windows")]
+mod hidden_shell;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +36,15 @@ pub fn run() {
         ])
         .setup(|app| {
             tray::create_tray(app)?;
+
+            // Initialize hidden shell (Windows only) — persistent cmd.exe
+            // with no window for executing all CLI commands
+            #[cfg(target_os = "windows")]
+            {
+                if let Err(e) = hidden_shell::win::init() {
+                    eprintln!("[OpenClaw Wallpaper] Failed to init hidden shell: {}", e);
+                }
+            }
 
             // Auto-start Gateway on app launch (in background)
             std::thread::spawn(|| {

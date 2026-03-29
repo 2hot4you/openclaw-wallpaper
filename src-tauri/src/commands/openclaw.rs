@@ -1,161 +1,17 @@
 /// Default Gateway HTTP port.
 const DEFAULT_PORT: u16 = 18789;
 
-// ─── Hidden Process Execution (Windows) ─────────────────────
+// ─── Command Execution ──────────────────────────────────────
 
-/// Query the Scheduled Task "OpenClaw Gateway" to find the actual
-/// command it runs, then execute that command directly with CREATE_NO_WINDOW.
-#[cfg(target_os = "windows")]
-fn start_gateway_hidden() -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    // Step 1: Query the scheduled task to find what command it runs
-    // schtasks /Query /TN "OpenClaw Gateway" /XML returns the full task XML
-    let query = std::process::Command::new("schtasks.exe")
-        .args(["/Query", "/TN", "OpenClaw Gateway", "/XML"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|e| format!("schtasks query failed: {}", e))?;
-
-    if !query.status.success() {
-        // Task doesn't exist, fall back to PowerShell
-        println!("[openclaw] Scheduled task not found, falling back to PowerShell");
-        return run_via_powershell(&["gateway", "start"]);
-    }
-
-    let xml = String::from_utf8_lossy(&query.stdout);
-    println!("[openclaw] Task XML:\n{}", xml);
-
-    // Step 2: Parse the command and arguments from XML
-    // Look for <Command>...</Command> and <Arguments>...</Arguments>
-    let exe = extract_xml_value(&xml, "Command");
-    let task_args = extract_xml_value(&xml, "Arguments");
-
-    if let Some(exe_path) = exe {
-        println!("[openclaw] Task command: {:?}, args: {:?}", exe_path, task_args);
-
-        let mut cmd = std::process::Command::new(&exe_path);
-        if let Some(ref a) = task_args {
-            // Split arguments (they may contain quoted paths)
-            for arg in shell_split(a) {
-                cmd.arg(arg);
-            }
-        }
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.stdin(std::process::Stdio::null());
-        cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
-
-        cmd.spawn()
-            .map_err(|e| format!("Failed to spawn gateway: {}", e))?;
-
-        println!("[openclaw] Gateway started directly (no task, no cmd window)");
-        return Ok(());
-    }
-
-    // Fallback
-    println!("[openclaw] Could not parse task XML, falling back to PowerShell");
-    run_via_powershell(&["gateway", "start"])
-}
-
-/// Extract value between <tag>...</tag> from XML string.
-#[cfg(target_os = "windows")]
-fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
-    let open = format!("<{}>", tag);
-    let close = format!("</{}>", tag);
-    if let Some(start) = xml.find(&open) {
-        let value_start = start + open.len();
-        if let Some(end) = xml[value_start..].find(&close) {
-            let value = xml[value_start..value_start + end].trim().to_string();
-            if !value.is_empty() {
-                return Some(value);
-            }
-        }
-    }
-    None
-}
-
-/// Simple shell argument splitter (handles quoted strings).
-#[cfg(target_os = "windows")]
-fn shell_split(s: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let mut in_quote = false;
-
-    for ch in s.chars() {
-        match ch {
-            '"' => in_quote = !in_quote,
-            ' ' if !in_quote => {
-                if !current.is_empty() {
-                    result.push(current.clone());
-                    current.clear();
-                }
-            }
-            _ => current.push(ch),
-        }
-    }
-    if !current.is_empty() {
-        result.push(current);
-    }
-    result
-}
-
-/// Stop the Gateway.
-#[cfg(target_os = "windows")]
-fn stop_gateway_hidden() -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    // Stop via schtasks
-    let _ = std::process::Command::new("schtasks.exe")
-        .args(["/End", "/TN", "OpenClaw Gateway"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    // Also kill any node process running the gateway
-    // taskkill is more reliable than schtasks /End
-    let _ = std::process::Command::new("taskkill.exe")
-        .args(["/F", "/FI", "WINDOWTITLE eq OpenClaw Gateway"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    Ok(())
-}
-
-/// Run any command via PowerShell hidden (fallback).
-#[cfg(target_os = "windows")]
-fn run_via_powershell(args: &[&str]) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let ps_script = format!("& openclaw {}", args.join(" "));
-    println!("[openclaw] PowerShell fallback: {}", ps_script);
-
-    std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps_script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("PowerShell failed: {}", e))?;
-
-    Ok(())
-}
-
-/// Run openclaw CLI command, completely hidden.
+/// Run openclaw CLI command via the hidden shell (Windows) or direct spawn (other).
+/// Zero console windows on Windows.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
+    let _cmd = format!("openclaw {}", args.join(" "));
+
     #[cfg(target_os = "windows")]
     {
-        if args.len() >= 2 && args[0] == "gateway" {
-            return match args[1] {
-                "start" | "restart" => start_gateway_hidden(),
-                "stop" => stop_gateway_hidden(),
-                _ => run_via_powershell(args),
-            };
-        }
-        return run_via_powershell(args);
+        println!("[openclaw] Executing via hidden shell: {}", cmd);
+        return crate::hidden_shell::win::exec_detached(&cmd);
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -207,39 +63,12 @@ pub async fn start_openclaw() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_openclaw() -> Result<(), String> {
-    // Graceful HTTP shutdown (async, won't panic)
-    let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
-    let _ = reqwest::Client::new().post(&url).send().await;
-
-    // Also run CLI stop via PowerShell
-    #[cfg(target_os = "windows")]
-    {
-        run_via_powershell(&["gateway", "stop"])?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = run_openclaw_hidden(&["gateway", "stop"]);
-    }
-    Ok(())
+    run_openclaw_hidden(&["gateway", "stop"])
 }
 
 #[tauri::command]
 pub async fn restart_openclaw() -> Result<(), String> {
-    // Stop
-    let url = format!("http://127.0.0.1:{}/shutdown", DEFAULT_PORT);
-    let _ = reqwest::Client::new().post(&url).send().await;
-    #[cfg(target_os = "windows")]
-    {
-        let _ = run_via_powershell(&["gateway", "stop"]);
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = run_openclaw_hidden(&["gateway", "stop"]);
-    }
-
-    // Wait then start
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    run_openclaw_hidden(&["gateway", "start"])
+    run_openclaw_hidden(&["gateway", "restart"])
 }
 
 #[tauri::command]
