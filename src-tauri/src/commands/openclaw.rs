@@ -6,7 +6,7 @@ const DEFAULT_PORT: u16 = 18789;
 /// Run openclaw CLI command via the hidden shell (Windows) or direct spawn (other).
 /// Zero console windows on Windows.
 pub fn run_openclaw_hidden(args: &[&str]) -> Result<(), String> {
-    let _cmd = format!("openclaw {}", args.join(" "));
+    let cmd = format!("openclaw {}", args.join(" "));
 
     #[cfg(target_os = "windows")]
     {
