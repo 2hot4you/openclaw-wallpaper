@@ -130,7 +130,7 @@ pub mod win {
                     if !HOOK_ACTIVE.load(Ordering::Relaxed) {
                         break;
                     }
-                    TranslateMessage(&msg);
+                    let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
 
