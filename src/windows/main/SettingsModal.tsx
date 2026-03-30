@@ -167,8 +167,8 @@ const GatewayTab: React.FC = () => {
       <SectionTitle>Actions</SectionTitle>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <ActionButton label="▶️ Start" onClick={() => doAction("Start", startOpenClaw)} />
-        <ActionButton label="⏹️ Stop" onClick={() => doAction("Stop", async () => { await stopOpenClaw(); disconnect(); })} />
-        <ActionButton label="🔄 Restart" onClick={() => doAction("Restart", restartOpenClaw)} />
+        <ActionButton label="⏹️ Stop" onClick={() => doAction("Stop", async () => { disconnect(); await stopOpenClaw(); })} />
+        <ActionButton label="🔄 Restart" onClick={() => doAction("Restart", async () => { disconnect(); await restartOpenClaw(); })} />
         <ActionButton label="🩺 Health" onClick={loadHealth} />
       </div>
 
