@@ -19,29 +19,42 @@
 ### 🤖 Agent 角色系统
 - **7 套预制角色** spritesheet（48×96 像素，每方向 6 帧）
 - 四方向行走动画 + 空闲动画
-- **Main Agent（老板）** 固定在专属工位，工作时坐工位，空闲时去沙发休息
-- **Subagent** 从入口走进场景，分配到空闲工位，离开时走回入口并消失
-- Pop-in 出现动画 / 淡出消失动画
-- 工作状态：快速输入动画 + 微小上下浮动
-- 错误状态：红色闪烁提示
+- **每工位独立路线系统** — 角色从门口沿 Tiled 中预设的 waypoint 路径走到各自工位
+- **Main Agent（老板）** 从门口走到专属工位，工作时坐工位，空闲时走到沙发休息
+- **Subagent** 从门口沿路线走到分配的工位，Gateway 关闭时播放消失动画
+- 工作状态：快速输入动画 + 微小上下浮动 + ⚡ emote
+- 空闲状态：💤 emote
+- 错误状态：红色闪烁 + ❌ emote
+
+### 🖥️ 桌面壁纸模式（Windows）
+- **WorkerW 嵌入** — 窗口嵌入桌面图标下方，桌面图标完整可见
+- **全局鼠标 Hook** — WH_MOUSE_LL 捕获鼠标事件并转发到壁纸窗口（Lively Wallpaper 技术）
+- 桌面聚焦时可交互（点击角色、聊天面板等）
+- 托盘一键切换壁纸模式 ↔ 窗口模式
 
 ### 💬 交互系统
-- **漫画对话气泡信息面板** — 点击角色弹出像素风气泡，显示名称、状态、模型、token 用量
-- **聊天面板** — 右侧滑出面板，支持 Markdown 渲染（代码块、表格、列表等），与 Agent 实时对话
-- **状态 Emote 气泡** — 角色头顶显示状态图标（⚡工作中 / 💤空闲 / ❌错误）
+- **漫画对话气泡** — 点击角色弹出气泡，显示名称、状态、模型、token 用量
+- **聊天面板** — 右侧浮动面板（不压缩场景），Markdown 渲染，与 Agent 实时对话
+- **模型切换** — 聊天面板内可切换 AI 模型
+- **状态 Emote 气泡** — 角色头顶状态图标
 - **POI 交互** — 点击白板打开控制面板
 
 ### 🔌 Gateway 集成
-- **WebSocket JSON-RPC** 连接 OpenClaw Gateway（协议 v3）
+- **WebSocket JSON-RPC v3** 连接 OpenClaw Gateway
 - **Token + Device Token 双重认证**（自动从 `~/.openclaw/` 读取）
 - **实时 Session 状态同步**（3 秒轮询 + 事件推送）
+- **隐藏 Shell** — 内置常驻 cmd.exe 管道（Windows），所有命令零 CMD 弹窗
+- **Gateway 自动启动** — 应用启动时自动检测并启动 Gateway
+- **Stop 防重连** — 关闭 Gateway 时立即断开 WebSocket + 15 秒防重连保护
 - 自动重连（指数退避 1s → 30s）
 - 离线模式：暗色遮罩 + "OpenClaw Offline" 提示
 
 ### 🔧 系统管理
-- **系统托盘** — 启动/停止/重启 Gateway、刷新状态、开机自启
-- **自动启动 Gateway** — 应用启动时检测 Gateway 状态，未运行则自动启动（Windows 使用 VBS 隐藏执行）
-- **控制面板** — Gateway 健康检查、通道状态、模型列表、配置管理
+- **自定义窗口标题栏** — 无原生边框，像素风半透明标题栏（hover 显示）
+- **窗口控制** — 最小化 / 全屏 / 关闭，关闭时弹出确认框（同步关闭 Gateway）
+- **系统托盘** — 启动/停止/重启 Gateway、壁纸模式切换、开机自启
+- **控制面板** — Gateway 健康检查、Provider 管理、模型切换、配置编辑
+- **Provider 管理** — 添加/删除 AI Provider，管理 API Key 和模型列表
 
 ## 🚀 快速开始
 
@@ -81,6 +94,7 @@ pnpm tauri build
 | 组件 | 技术 |
 |------|------|
 | 桌面壳 | [Tauri v2](https://v2.tauri.app/) (Rust) |
+| 壁纸嵌入 | [tauri-plugin-wallpaper](https://github.com/meslzy/tauri-plugin-wallpaper) v3（Windows） |
 | 2D 游戏引擎 | [Phaser 3](https://phaser.io/) |
 | 前端框架 | React 19 + TypeScript |
 | 状态管理 | [Zustand](https://github.com/pmndrs/zustand) 5 |
@@ -88,6 +102,7 @@ pnpm tauri build
 | 地图编辑 | [Tiled](https://www.mapeditor.org/) tilemap（JSON 格式） |
 | 像素素材 | [Agent Town](https://limezu.itch.io/) (MIT) |
 | Markdown | react-markdown |
+| Win32 API | [windows](https://crates.io/crates/windows) crate（鼠标 Hook、进程管理） |
 | 构建工具 | Vite 7 + pnpm |
 
 ## 📁 项目结构
@@ -95,121 +110,77 @@ pnpm tauri build
 ```
 src/                              # 前端（React + TypeScript）
 ├── main.tsx                      # React 入口
-├── App.tsx                       # 应用路由（按窗口 label 分流）
+├── App.tsx                       # 应用路由
 ├── game/                         # Phaser 3 游戏层
-│   ├── GameManager.ts            # 游戏引擎入口（初始化、生命周期管理）
+│   ├── GameManager.ts            # 游戏引擎入口
 │   ├── scenes/
-│   │   ├── BootScene.ts          # 资源预加载（tilemap、spritesheet、emote）
-│   │   └── OfficeScene.ts        # 办公室主场景（tilemap 渲染、摄像机、spawn 点解析）
+│   │   ├── BootScene.ts          # 资源预加载
+│   │   └── OfficeScene.ts        # 办公室主场景
 │   ├── characters/
-│   │   ├── AgentManager.ts       # 角色管理器（session→角色同步、工位分配、boss/subagent 逻辑）
-│   │   └── AgentSprite.ts        # 单个角色（sprite 动画、移动、emote、点击交互）
+│   │   ├── AgentManager.ts       # 角色管理（每工位路线、spawn/despawn）
+│   │   └── AgentSprite.ts        # 角色实体（动画、移动、交互）
 │   ├── config/
-│   │   ├── animations.ts         # spritesheet 帧配置（48×96，行走/空闲动画）
-│   │   └── emotes.ts             # emote 气泡配置（状态→动画映射）
-│   └── ui/
-│       ├── InfoBubble.ts         # Phaser 原生信息气泡（世界坐标）
-│       ├── EmoteBubble.ts        # emote 气泡组件
-│       ├── StatusBar.ts          # 底部状态栏
-│       └── POIInteraction.ts     # POI 点击交互区域
-├── windows/
-│   └── main/
-│       ├── MainWindow.tsx        # 主窗口（Phaser 容器 + Gateway 连接 + 事件同步）
-│       ├── ChatPanel.tsx         # 聊天侧边栏（Markdown 渲染、消息收发）
-│       ├── AgentInfoPanel.tsx    # 漫画气泡信息面板（React overlay）
-│       └── SettingsModal.tsx     # 控制面板（Gateway 管理、模型、配置）
-├── gateway/
-│   ├── GatewayClient.ts          # WebSocket JSON-RPC 客户端
-│   ├── SessionMapper.ts          # Session→角色数据映射（过滤 + 状态转换）
-│   ├── types.ts                  # 类型定义
-│   └── index.ts
-├── stores/
-│   ├── gatewayStore.ts           # Gateway 状态（连接、sessions、agents、聊天、配置）
-│   └── appStore.ts               # 应用状态（选中角色、聊天面板、设置面板）
-├── styles/
-│   └── pixel-theme.ts            # 像素风 UI 主题（颜色、字体、组件样式）
-├── hooks/
-│   └── useWindowLabel.ts         # 窗口类型检测
-└── utils/
-    ├── constants.ts              # 常量
-    └── tauri-ipc.ts              # Tauri IPC 命令封装
+│   │   ├── animations.ts         # spritesheet 帧配置
+│   │   └── emotes.ts             # emote 气泡配置
+│   └── ui/                       # Phaser UI 组件
+├── windows/main/
+│   ├── MainWindow.tsx            # 主窗口
+│   ├── ChatPanel.tsx             # 聊天面板（浮动 overlay）
+│   ├── AgentInfoPanel.tsx        # 角色信息气泡
+│   ├── SettingsModal.tsx         # 控制面板（Gateway/Provider/Config）
+│   └── PixelWindowControls.tsx   # 自定义窗口标题栏 + 关闭确认
+├── gateway/                      # Gateway 通信层
+├── stores/                       # Zustand 状态管理
+├── styles/pixel-theme.ts         # 像素风 UI 主题
+└── utils/tauri-ipc.ts            # Tauri IPC 封装
 
 src-tauri/                        # Tauri 后端（Rust）
 ├── src/
-│   ├── main.rs                   # 入口
-│   ├── lib.rs                    # App builder（插件注册、自动启动 Gateway）
-│   ├── tray.rs                   # 系统托盘（状态显示、启停控制、开机自启）
+│   ├── lib.rs                    # App builder + Gateway 自动启动
+│   ├── tray.rs                   # 系统托盘（含壁纸模式切换）
+│   ├── hidden_shell.rs           # 常驻隐藏 cmd.exe（零弹窗命令执行）
+│   ├── mouse_hook.rs             # 全局鼠标 Hook（壁纸模式交互）
 │   └── commands/
-│       ├── mod.rs
-│       └── openclaw.rs           # IPC 命令（健康检查、启停 Gateway、读取 token、VBS 隐藏执行）
+│       ├── openclaw.rs           # Gateway 管理（schtasks 直启 + 隐藏 Shell）
+│       └── wallpaper.rs          # 壁纸模式（WorkerW attach + 鼠标 Hook）
 ├── Cargo.toml
 └── tauri.conf.json
 
-public/                           # 静态资源
-├── maps/
-│   └── office2.json              # Tiled tilemap（办公室场景）
-├── characters/
-│   └── Premade_Character_48x48_*.png  # 7 套角色 spritesheet
-├── sprites/
-│   └── emotes_48x48.png          # emote 气泡 spritesheet
-└── tilesets/
-    └── *.png                     # Agent Town tileset 图片
+public/maps/office2.json          # Tiled 地图（含工位、waypoints、POI）
 ```
 
-## ⚙️ 配置说明
+## 🗺️ Tilemap 路线系统
 
-### OpenClaw Gateway 连接
+角色进出办公室沿预设的 waypoint 路径行走，在 Tiled 的 `spawns` 层配置：
 
-应用自动连接本地 Gateway（`ws://127.0.0.1:18789`）。认证 token 从以下路径自动读取：
+### Spawn 点命名规则
 
-| Token | 路径 |
-|-------|------|
-| Gateway Token | `~/.openclaw/openclaw.json` → `gateway.auth.token` |
-| Device Token | `~/.openclaw/identity/device-auth.json` → `tokens.operator.token` |
+| 名称 | 用途 |
+|------|------|
+| `door` | 角色进出门口位置 |
+| `Main_work_right` | Boss 工位 |
+| `Main_rest_face` | Boss 休息位（pois 层） |
+| `subagent_face#N` | Subagent 朝下工位 |
+| `subagent_back#N` | Subagent 朝上工位 |
+| `subagent_waypoint_#N` | 路径点（按编号排序） |
 
-如果 Gateway 未运行，应用启动时会自动尝试启动（`openclaw gateway start`）。
+### 路线表
 
-### Tilemap 配置
+```
+上层工位:
+  face#1: door → #1 → #3 → #4 → seat
+  face#2: door → #1 → #3 → #5 → seat
+  face#3: door → #1 → #3 → #6 → seat
 
-地图文件位于 `public/maps/office2.json`，使用 [Tiled](https://www.mapeditor.org/) 编辑。
+下层工位:
+  back#1: door → #2 → #7 → #8 → seat
+  back#2: door → #2 → #7 → #9 → seat
+  back#3: door → #2 → #7 → #10 → seat
 
-**关键层：**
-- `floor` / `walls` / `ground` / `furniture` / `objects` — Tile 层
-- `props` / `props-over` — Tile Object 层
-- `overhead` — 覆盖在角色上方的层
-- `spawns` — 角色工位坐标（Object 层，支持 `facing` 属性）
-- `pois` — POI 交互点（Object 层）
-
-**Spawn 点命名规则：**
-- `Main_work_right` — 老板工位（facing right）
-- `Main_rest_face` — 老板休息位（POI 层，facing down）
-- `subagent_face#N` / `subagent_back#N` — Subagent 工位
-
-## 🎨 开发指南
-
-### 修改场景
-
-1. 用 Tiled 打开 `public/maps/office2.json`
-2. 编辑 tile 层或添加新的 tileset
-3. 在 `spawns` 层添加新的工位点（设置 `facing` 属性为 `up`/`down`/`left`/`right`）
-4. 保存为 JSON 格式
-
-### 添加角色
-
-1. 将 48×96 的 spritesheet PNG 放入 `public/characters/`
-2. 在 `src/game/config/animations.ts` 的 `CHARACTER_SPRITES` 数组中添加条目
-3. Spritesheet 布局要求：Row 1 = idle（每方向 6 帧），Row 2 = walk（每方向 6 帧）
-
-### 添加 Emote
-
-1. emote spritesheet 位于 `public/sprites/emotes_48x48.png`（48×48 网格）
-2. 在 `src/game/config/emotes.ts` 中添加 `EmoteDef` 和 `STATUS_EMOTE_MAP` 映射
-
-### 架构要点
-
-- **Phaser 与 React 分层**：Phaser Canvas 全屏铺底，React DOM 覆盖其上（`pointer-events: none` 基态）
-- **Zustand 桥接**：Phaser 通过 `getState()` 直接读取 store，React 通过 hooks 响应式更新
-- **Gateway 事件驱动**：WebSocket 事件 → Zustand store 更新 → AgentManager 同步角色
+Boss:
+  work: door → #2 → #7 → #10 → #11 → #12 → #13 → #14 → seat
+  rest: door → #2 → #7 → #10 → #11 → #12 → #15 → #16 → sofa
+```
 
 ## 📝 文档
 
@@ -219,10 +190,11 @@ public/                           # 静态资源
 
 ## 🙏 致谢
 
-- **[Agent Town](https://limezu.itch.io/)** — 像素办公室素材（MIT 授权），提供了完整的 48×48 tileset 和角色 spritesheet
-- **[Phaser 3](https://phaser.io/)** — 强大的 2D 游戏引擎
-- **[Tauri](https://tauri.app/)** — 轻量级桌面应用框架
+- **[Agent Town](https://limezu.itch.io/)** — 像素办公室素材（MIT 授权）
+- **[Phaser 3](https://phaser.io/)** — 2D 游戏引擎
+- **[Tauri](https://tauri.app/)** — 桌面应用框架
 - **[OpenClaw](https://github.com/nicepkg/openclaw)** — AI Agent 编排平台
+- **[ClawX](https://github.com/ValueCell-ai/ClawX)** — 参考其 windowsHide 进程管理方案
 
 ## License
 

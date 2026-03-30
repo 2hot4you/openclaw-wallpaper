@@ -1,9 +1,9 @@
 # OpenClaw Wallpaper — 技术架构设计
 
-> 版本：v0.2  
+> 版本：v0.3  
 > 作者：Architect  
-> 日期：2026-03-27（实现变更记录：2026-03-29）  
-> 状态：MVP 实现完成  
+> 日期：2026-03-27（实现变更记录：2026-03-31）  
+> 状态：MVP + Sprint 2 完成  
 > 依据：[PRD v0.2](./prd.md) · [可行性调研](./research/feasibility-report.md)
 
 ---
@@ -62,10 +62,14 @@
 | `EmoteBubble` | Emote 动画气泡组件 |
 | `StatusBar` | 底部状态栏（连接状态 + 文字） |
 | `POIInteraction` | 场景 POI 点击交互区域 |
-| `SettingsModal` | 控制面板（Gateway/Models/Config 三标签页） |
+| `SettingsModal` | 控制面板（Gateway/Provider/Models/Config 四标签页） |
 | `pixel-theme.ts` | 像素风 UI 主题系统 |
-| VBS 隐藏执行 | Windows 专用：通过 WScript.Shell 隐藏启动 Gateway |
-| 自动启动 Gateway | Rust 侧 setup 钩子，应用启动时自动拉起 Gateway |
+| `hidden_shell.rs` | **Sprint 2** 常驻隐藏 cmd.exe 管道（CREATE_NO_WINDOW），零弹窗命令执行 |
+| `mouse_hook.rs` | **Sprint 2** WH_MOUSE_LL 全局鼠标 Hook，WorkerW 壁纸模式交互 |
+| `wallpaper.rs` | **Sprint 2** 壁纸模式管理（WorkerW attach/detach + Hook 启停） |
+| `PixelWindowControls.tsx` | **Sprint 2** 自定义窗口标题栏 + 像素风关闭确认弹框 |
+| 每工位路线系统 | **Sprint 2** AgentManager 硬编码路线表 + Tiled waypoint 解析 |
+| Gateway 直启 | **Sprint 2** 从 schtasks XML 提取 node.exe 命令直接启动（绕过 schtasks 弹窗） |
 
 ---
 

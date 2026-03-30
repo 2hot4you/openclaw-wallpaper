@@ -2,8 +2,8 @@
 
 > 版本：v0.2  
 > 作者：PM  
-> 日期：2026-03-27（实现状态更新：2026-03-29）  
-> 状态：MVP 实现完成
+> 日期：2026-03-27（实现状态更新：2026-03-31）  
+> 状态：MVP 实现完成 + Sprint 2 迭代中
 
 ---
 
@@ -25,7 +25,7 @@
 
 | ID | 功能 | 状态 | 实现说明 |
 |----|------|------|----------|
-| F-01 | 壁纸嵌入 | ⏳ 待集成 | tauri-plugin-wallpaper 未集成，当前仅窗口模式。壁纸嵌入逻辑不在 MVP 首版范围 |
+| F-01 | 壁纸嵌入 | ✅ 完成 | Windows: tauri-plugin-wallpaper WorkerW attach + WH_MOUSE_LL 全局鼠标 Hook 转发（桌面聚焦时可交互）。macOS: 开发模式窗口 |
 | F-02 | 像素风场景渲染 | ✅ 完成 | Phaser 3 + Tiled tilemap（office2.json），多层渲染：floor/walls/ground/furniture/objects/props/overhead |
 | F-03 | Agent 角色显示 | ✅ 完成 | AgentManager 管理角色生命周期，Session→角色自动同步，7 套预制角色 spritesheet |
 | F-04 | Agent 状态动画 | ✅ 完成 | 空闲（idle 动画）、工作中（快速 idle + 微浮动）、错误（红色闪烁）、Emote 气泡（⚡💤❌） |
@@ -33,6 +33,22 @@
 | F-06 | 实时状态同步 | ✅ 完成 | WebSocket JSON-RPC v3 + 3 秒轮询 sessions.list + chat/agent/presence 事件监听 |
 | F-07 | 系统托盘 | ✅ 完成 | Rust 原生托盘：启动/停止/重启 Gateway、刷新状态、开机自启（tauri-plugin-autostart） |
 | F-08 | 自适应性能策略 | ⏳ 部分 | 无独立 PerformanceController，依赖 Phaser 默认帧率管理 |
+
+### Sprint 2 新增功能（2026-03-29 ~ 2026-03-31）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **壁纸模式** | ✅ | WorkerW 嵌入 + 鼠标 Hook 转发，桌面图标不受影响 |
+| **每工位独立路线** | ✅ | 16 个 waypoint，7 个工位各有独立进入路线，所有角色从 door 走路线到位 |
+| **隐藏 Shell** | ✅ | 常驻 cmd.exe + CREATE_NO_WINDOW，Gateway 启停零 CMD 弹窗 |
+| **自定义窗口标题栏** | ✅ | 无原生边框，半透明悬浮标题栏（hover 显示），像素风控制按钮 |
+| **关闭确认弹框** | ✅ | 像素风格确认弹框，提示关闭会同步停止 Gateway |
+| **ChatPanel 浮动** | ✅ | 改为 absolute overlay，不压缩 Phaser 场景 |
+| **Stop 防重连** | ✅ | disconnect + stopPending 标志，15s 内阻止所有自动重连 |
+| **消失动画** | ✅ | Gateway 关闭时角色 5s 淡出消失（不走路线避免乱跑） |
+| **Provider 管理** | ✅ | 设置面板新增 Provider 标签页，添加/删除 Provider 和模型 |
+| **模型切换** | ✅ | 聊天面板内下拉切换默认模型 |
+| **对话气泡清晰化** | ✅ | 字体从像素字体改为系统字体，更大更清晰 |
 
 ### P1 功能实现状态
 
