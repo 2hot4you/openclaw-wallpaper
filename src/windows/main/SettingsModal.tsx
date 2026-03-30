@@ -52,7 +52,7 @@ export const SettingsModal: React.FC = () => {
     >
       <div
         style={{
-          width: 560,
+          width: 640,
           maxHeight: "85vh",
           background: COLORS.bg,
           ...pixelBorder(COLORS.accent),
@@ -64,19 +64,19 @@ export const SettingsModal: React.FC = () => {
       >
         {/* Title bar */}
         <div style={{
-          padding: "10px 14px",
+          padding: "12px 16px",
           background: COLORS.accent,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexShrink: 0,
         }}>
-          <span style={{ fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.textBright }}>
+          <span style={{ fontFamily: PIXEL_FONT, fontSize: "14px", color: COLORS.textBright }}>
             🦞 OpenClaw Control Panel
           </span>
           <button onClick={handleClose} style={{
             ...pixelButton, background: "transparent", border: "none",
-            boxShadow: "none", padding: "2px 6px", fontSize: "12px",
+            boxShadow: "none", padding: "2px 8px", fontSize: "14px",
           }}>✕</button>
         </div>
 
@@ -95,7 +95,7 @@ export const SettingsModal: React.FC = () => {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                fontFamily: PIXEL_FONT, fontSize: "9px", padding: "8px 14px",
+                fontFamily: PIXEL_FONT, fontSize: "12px", padding: "10px 16px",
                 background: activeTab === tab.id ? COLORS.bg : "transparent",
                 color: activeTab === tab.id ? COLORS.textBright : COLORS.textDim,
                 border: "none", borderBottom: activeTab === tab.id ? `2px solid ${COLORS.accent}` : "2px solid transparent",
@@ -106,7 +106,7 @@ export const SettingsModal: React.FC = () => {
         </div>
 
         {/* Tab content */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
           {activeTab === "gateway" && <GatewayTab />}
           {activeTab === "models" && <ModelsTab />}
           {activeTab === "providers" && <ProvidersTab />}
@@ -170,7 +170,7 @@ const GatewayTab: React.FC = () => {
 
       {/* Actions */}
       <SectionTitle>Actions</SectionTitle>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <ActionButton label="▶️ Start" onClick={() => doAction("Start", startOpenClaw)} />
         <ActionButton label="⏹️ Stop" onClick={() => doAction("Stop", async () => { useAppStore.getState().setStopPending(true); disconnect(); await stopOpenClaw(); setTimeout(() => useAppStore.getState().setStopPending(false), 15000); })} />
         <ActionButton label="🔄 Restart" onClick={() => doAction("Restart", async () => { useAppStore.getState().setStopPending(true); disconnect(); await restartOpenClaw(); setTimeout(() => useAppStore.getState().setStopPending(false), 15000); })} />
@@ -178,7 +178,7 @@ const GatewayTab: React.FC = () => {
       </div>
 
       {actionMsg && (
-        <div style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.warning, marginBottom: 10 }}>
+        <div style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.warning, marginBottom: 12 }}>
           {actionMsg}
         </div>
       )}
@@ -195,19 +195,19 @@ const GatewayTab: React.FC = () => {
           {Object.entries(health.channels).map(([name, ch]) => (
             <div key={name} style={{
               display: "flex", alignItems: "center", gap: 8,
-              padding: "4px 0", borderBottom: `1px solid ${COLORS.inputBorder}`,
+              padding: "5px 0", borderBottom: `1px solid ${COLORS.inputBorder}`,
             }}>
-              <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text, flex: 1 }}>
+              <span style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.text, flex: 1 }}>
                 {name}
               </span>
               <span style={{
-                fontFamily: PIXEL_FONT, fontSize: "8px",
+                fontFamily: PIXEL_FONT, fontSize: "11px",
                 color: !ch.configured ? COLORS.textDim : ch.running ? COLORS.success : COLORS.warning,
               }}>
                 {!ch.configured ? "⚪ N/A" : ch.running ? "🟢 Running" : "🟡 Stopped"}
               </span>
               {ch.lastError && (
-                <span style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.error }}>
+                <span style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.error }}>
                   ⚠ {ch.lastError.slice(0, 30)}
                 </span>
               )}
@@ -273,9 +273,9 @@ const ModelsTab: React.FC = () => {
     <>
       <SectionTitle>Default Model</SectionTitle>
       <div style={{
-        fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.accent,
-        padding: "6px 8px", background: "rgba(255,255,255,0.05)",
-        border: `1px solid ${COLORS.inputBorder}`, marginBottom: 12,
+        fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.accent,
+        padding: "8px 10px", background: "rgba(255,255,255,0.05)",
+        border: `1px solid ${COLORS.inputBorder}`, marginBottom: 14,
       }}>
         🧠 {currentModel || "Not set"}
       </div>
@@ -283,10 +283,10 @@ const ModelsTab: React.FC = () => {
       <SectionTitle>Available Models</SectionTitle>
       {models.length === 0 && <Dimmed>No models found</Dimmed>}
       {Array.from(grouped.entries()).map(([provider, providerModels]) => (
-        <div key={provider} style={{ marginBottom: 12 }}>
+        <div key={provider} style={{ marginBottom: 14 }}>
           <div style={{
-            fontFamily: PIXEL_FONT, fontSize: "8px", color: COLORS.textDim,
-            marginBottom: 4, textTransform: "uppercase",
+            fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.textDim,
+            marginBottom: 6, textTransform: "uppercase",
           }}>
             ▸ {provider}
           </div>
@@ -295,27 +295,27 @@ const ModelsTab: React.FC = () => {
             const isCurrent = fullId === currentModel;
             return (
               <div key={fullId} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 8px", marginBottom: 4,
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 10px", marginBottom: 6,
                 background: isCurrent ? "rgba(233,69,96,0.1)" : "transparent",
                 border: `1px solid ${isCurrent ? COLORS.accent : COLORS.inputBorder}`,
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text }}>
+                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.text }}>
                     {m.name || m.id}
                   </div>
-                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim }}>
+                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim, marginTop: 2 }}>
                     {m.contextWindow ? `${(m.contextWindow / 1000).toFixed(0)}K ctx` : ""}
                     {m.reasoning ? " · reasoning" : ""}
                   </div>
                 </div>
                 {isCurrent ? (
-                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "8px", color: COLORS.success }}>✓ Active</span>
+                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.success }}>✓ Active</span>
                 ) : (
                   <button
                     onClick={() => handleSetDefault(fullId)}
                     disabled={saving}
-                    style={{ ...pixelButton, fontSize: "8px", padding: "3px 8px" }}
+                    style={{ ...pixelButton, fontSize: "11px", padding: "5px 10px" }}
                   >
                     Use
                   </button>
@@ -479,9 +479,9 @@ const ProvidersTab: React.FC = () => {
     <>
       {actionMsg && (
         <div style={{
-          fontFamily: PIXEL_FONT, fontSize: "9px",
+          fontFamily: PIXEL_FONT, fontSize: "12px",
           color: actionMsg.startsWith("✅") ? COLORS.success : COLORS.error,
-          marginBottom: 10, padding: "4px 8px",
+          marginBottom: 12, padding: "6px 10px",
           background: "rgba(255,255,255,0.05)",
           border: `1px solid ${COLORS.inputBorder}`,
         }}>
@@ -504,18 +504,18 @@ const ProvidersTab: React.FC = () => {
 
         return (
           <div key={alias} style={{
-            marginBottom: 10,
-            padding: "10px 12px",
+            marginBottom: 12,
+            padding: "12px 14px",
             background: "rgba(255,255,255,0.03)",
             ...pixelBorder(COLORS.borderDim),
           }}>
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textBright }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textBright }}>
                 {alias}
               </span>
               <span style={{
-                fontFamily: PIXEL_FONT, fontSize: "7px",
+                fontFamily: PIXEL_FONT, fontSize: "10px",
                 color: hasApiKey ? COLORS.success : COLORS.warning,
               }}>
                 {hasApiKey ? "✅ Configured" : "⚠️ No API Key"}
@@ -534,11 +534,11 @@ const ProvidersTab: React.FC = () => {
 
             {/* Model details */}
             {prov.models && prov.models.length > 0 && (
-              <div style={{ marginTop: 4, paddingLeft: 8, borderLeft: `2px solid ${COLORS.borderDim}` }}>
+              <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${COLORS.borderDim}` }}>
                 {prov.models.map((m) => (
                   <div key={m.id} style={{
-                    fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim,
-                    padding: "2px 0",
+                    fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
+                    padding: "3px 0",
                   }}>
                     {m.name || m.id}
                     {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
@@ -550,23 +550,23 @@ const ProvidersTab: React.FC = () => {
 
             {/* Edit API Key inline */}
             {isEditing && (
-              <div style={{ marginTop: 8, display: "flex", gap: 6, alignItems: "center" }}>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
                 <input
                   type="password"
                   value={editApiKeyValue}
                   onChange={(e) => setEditApiKeyValue(e.target.value)}
                   placeholder="New API Key"
-                  style={{ ...pixelInput, flex: 1, fontSize: "9px" }}
+                  style={{ ...pixelInput, flex: 1 }}
                 />
                 <button
                   onClick={() => handleUpdateApiKey(alias)}
-                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 8px" }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 10px" }}
                 >
                   💾
                 </button>
                 <button
                   onClick={() => { setEditingAlias(null); setEditApiKeyValue(""); }}
-                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 8px", background: COLORS.bgPanel }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 10px", background: COLORS.bgPanel }}
                 >
                   ✕
                 </button>
@@ -575,16 +575,16 @@ const ProvidersTab: React.FC = () => {
 
             {/* Actions */}
             {!isEditing && (
-              <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button
                   onClick={() => { setEditingAlias(alias); setEditApiKeyValue(""); }}
-                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 10px", background: COLORS.bgPanel }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.bgPanel }}
                 >
                   ✏️ Edit Key
                 </button>
                 <button
                   onClick={() => handleRemoveProvider(alias)}
-                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 10px", background: COLORS.error }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.error }}
                 >
                   🗑️ Delete
                 </button>
@@ -596,24 +596,24 @@ const ProvidersTab: React.FC = () => {
 
       {/* ═══ Add Provider Form ═══ */}
       {!showAddForm ? (
-        <div style={{ marginTop: 8, marginBottom: 16 }}>
+        <div style={{ marginTop: 10, marginBottom: 18 }}>
           <button
             onClick={() => setShowAddForm(true)}
-            style={{ ...pixelButton, fontSize: "9px", padding: "6px 14px" }}
+            style={{ ...pixelButton, fontSize: "12px", padding: "8px 16px" }}
           >
             + Add Provider
           </button>
         </div>
       ) : (
         <div style={{
-          marginTop: 8, marginBottom: 16,
-          padding: "12px",
+          marginTop: 10, marginBottom: 18,
+          padding: "14px",
           background: "rgba(255,255,255,0.03)",
           ...pixelBorder(COLORS.accent),
         }}>
           <div style={{
-            fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.accent,
-            marginBottom: 10,
+            fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.accent,
+            marginBottom: 12,
           }}>
             New Provider
           </div>
@@ -662,40 +662,40 @@ const ProvidersTab: React.FC = () => {
 
           {/* Models */}
           <div style={{
-            fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.textDim,
-            marginTop: 10, marginBottom: 6,
+            fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.textDim,
+            marginTop: 12, marginBottom: 8,
           }}>
             Models
           </div>
           {formModels.map((m, i) => (
             <div key={i} style={{
-              display: "flex", gap: 6, marginBottom: 6, alignItems: "center",
+              display: "flex", gap: 8, marginBottom: 8, alignItems: "center",
             }}>
               <input
                 type="text"
                 value={m.id}
                 onChange={(e) => updateFormModel(i, "id", e.target.value)}
                 placeholder="model-id"
-                style={{ ...pixelInput, flex: 2, fontSize: "9px" }}
+                style={{ ...pixelInput, flex: 2, fontSize: "12px" }}
               />
               <input
                 type="text"
                 value={m.name ?? ""}
                 onChange={(e) => updateFormModel(i, "name", e.target.value)}
                 placeholder="Display Name"
-                style={{ ...pixelInput, flex: 2, fontSize: "9px" }}
+                style={{ ...pixelInput, flex: 2, fontSize: "12px" }}
               />
               <input
                 type="number"
                 value={m.contextWindow ?? ""}
                 onChange={(e) => updateFormModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)}
                 placeholder="ctx"
-                style={{ ...pixelInput, flex: 1, fontSize: "9px" }}
+                style={{ ...pixelInput, flex: 1, fontSize: "12px" }}
               />
               {formModels.length > 1 && (
                 <button
                   onClick={() => removeFormModel(i)}
-                  style={{ ...pixelButton, fontSize: "8px", padding: "2px 6px", background: COLORS.error }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "4px 8px", background: COLORS.error }}
                 >
                   ✕
                 </button>
@@ -704,23 +704,23 @@ const ProvidersTab: React.FC = () => {
           ))}
           <button
             onClick={addFormModel}
-            style={{ ...pixelButton, fontSize: "8px", padding: "3px 10px", background: COLORS.bgPanel, marginBottom: 10 }}
+            style={{ ...pixelButton, fontSize: "11px", padding: "5px 12px", background: COLORS.bgPanel, marginBottom: 12 }}
           >
             + Model
           </button>
 
           {/* Form actions */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
             <button
               onClick={() => { setShowAddForm(false); setFormAlias(""); setFormBaseUrl(""); setFormApiKey(""); setFormApiType("openai-chat"); setFormModels([emptyModelDef()]); }}
-              style={{ ...pixelButton, fontSize: "9px", padding: "6px 12px", background: COLORS.bgPanel }}
+              style={{ ...pixelButton, fontSize: "12px", padding: "8px 14px", background: COLORS.bgPanel }}
             >
               Cancel
             </button>
             <button
               onClick={handleAddProvider}
               disabled={formSaving}
-              style={{ ...pixelButton, fontSize: "9px", padding: "6px 12px" }}
+              style={{ ...pixelButton, fontSize: "12px", padding: "8px 14px" }}
             >
               {formSaving ? "Saving..." : "💾 Save Provider"}
             </button>
@@ -735,19 +735,19 @@ const ProvidersTab: React.FC = () => {
         const configured = !!value;
         return (
           <div key={envKey} style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "5px 0", borderBottom: `1px solid ${COLORS.inputBorder}`,
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "6px 0", borderBottom: `1px solid ${COLORS.inputBorder}`,
           }}>
-            <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text, flex: 1 }}>
+            <span style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.text, flex: 1 }}>
               {name}
             </span>
             <span style={{
-              fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim,
+              fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
             }}>
               {envKey}
             </span>
             <span style={{
-              fontFamily: PIXEL_FONT, fontSize: "8px",
+              fontFamily: PIXEL_FONT, fontSize: "11px",
               color: configured ? COLORS.success : COLORS.textDim,
             }}>
               {configured ? `✅ ${maskApiKey(value)}` : "⚪ Not set"}
@@ -830,7 +830,7 @@ const ConfigTab: React.FC = () => {
 
       <SettingsField label="Port">
         <input type="text" value={port} onChange={(e) => setPort(e.target.value)}
-          placeholder="18789" style={{ ...pixelInput, width: 120 }} />
+          placeholder="18789" style={{ ...pixelInput, width: 140 }} />
       </SettingsField>
 
       <SettingsField label="Auth Token">
@@ -838,8 +838,8 @@ const ConfigTab: React.FC = () => {
           placeholder="(optional)" style={pixelInput} />
       </SettingsField>
 
-      <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        {saved && <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.success, alignSelf: "center" }}>✅ Saved & Applied</span>}
+      <div style={{ marginTop: 16, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        {saved && <span style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.success, alignSelf: "center" }}>✅ Saved & Applied</span>}
         <button onClick={handleSave} style={pixelButton}>💾 Save</button>
       </div>
     </>
@@ -852,48 +852,48 @@ const ConfigTab: React.FC = () => {
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div style={{
-    fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.accent,
-    marginTop: 14, marginBottom: 6, borderBottom: `1px solid ${COLORS.borderDim}`,
-    paddingBottom: 3,
+    fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.accent,
+    marginTop: 16, marginBottom: 8, borderBottom: `1px solid ${COLORS.borderDim}`,
+    paddingBottom: 4,
   }}>{children}</div>
 );
 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
-    <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.textDim }}>{label}</span>
+  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+    <span style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.textDim }}>{label}</span>
     <span style={{
-      fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text,
+      fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.text,
       maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
     }}>{value}</span>
   </div>
 );
 
 const Dimmed: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim, textAlign: "center", padding: 20 }}>
+  <div style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textDim, textAlign: "center", padding: 24 }}>
     {children}
   </div>
 );
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
   <div style={{
-    fontFamily: PIXEL_FONT, fontSize: "10px",
+    fontFamily: PIXEL_FONT, fontSize: "13px",
     color: status === "connected" ? COLORS.success : COLORS.error,
-    padding: "6px 8px", background: "rgba(255,255,255,0.05)",
-    border: `1px solid ${COLORS.inputBorder}`, marginBottom: 10,
+    padding: "8px 10px", background: "rgba(255,255,255,0.05)",
+    border: `1px solid ${COLORS.inputBorder}`, marginBottom: 12,
   }}>
     {status === "connected" ? "🟢 Connected" : "🔴 Disconnected"}
   </div>
 );
 
 const ActionButton: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
-  <button onClick={onClick} style={{ ...pixelButton, fontSize: "9px", padding: "6px 12px" }}>
+  <button onClick={onClick} style={{ ...pixelButton, fontSize: "12px", padding: "8px 14px" }}>
     {label}
   </button>
 );
 
 const SettingsField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ marginBottom: 10 }}>
-    <div style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.textDim, marginBottom: 3 }}>
+  <div style={{ marginBottom: 12 }}>
+    <div style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.textDim, marginBottom: 4 }}>
       {label}
     </div>
     {children}

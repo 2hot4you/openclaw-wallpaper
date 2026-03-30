@@ -35,26 +35,35 @@ export const pixelBorder = (color = COLORS.border): React.CSSProperties => ({
   `,
 });
 
+/** Shared crisp-pixel text rendering hints. Apply to any text element using PIXEL_FONT. */
+export const pixelTextRendering: React.CSSProperties = {
+  WebkitFontSmoothing: "none" as unknown as string,
+  MozOsxFontSmoothing: "grayscale" as unknown as string,
+  textRendering: "optimizeLegibility",
+} as React.CSSProperties;
+
 export const pixelButton: React.CSSProperties = {
   fontFamily: PIXEL_FONT,
-  fontSize: "11px",
-  padding: "6px 12px",
+  fontSize: "14px",
+  padding: "8px 14px",
   background: COLORS.accent,
   color: COLORS.textBright,
   border: `2px solid ${COLORS.border}`,
   cursor: "pointer",
   imageRendering: "pixelated" as const,
   boxShadow: "2px 2px 0 0 rgba(0,0,0,0.5)",
+  ...pixelTextRendering,
 };
 
 export const pixelInput: React.CSSProperties = {
   fontFamily: PIXEL_FONT,
-  fontSize: "11px",
-  padding: "6px 8px",
+  fontSize: "14px",
+  padding: "8px 10px",
   background: COLORS.input,
   color: COLORS.text,
   border: `2px solid ${COLORS.inputBorder}`,
   outline: "none",
   width: "100%",
   boxSizing: "border-box" as const,
+  ...pixelTextRendering,
 };

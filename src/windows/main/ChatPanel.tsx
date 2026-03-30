@@ -300,7 +300,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
       <div
         style={{
           fontFamily: PIXEL_FONT,
-          fontSize: "9px",
+          fontSize: "12px",
           color: COLORS.textDim,
           marginBottom: 2,
           padding: "0 4px",
