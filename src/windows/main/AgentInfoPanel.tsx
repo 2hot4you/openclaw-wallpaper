@@ -243,8 +243,8 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
           border: "2px solid #222",
           borderRadius: 10,
           padding: "10px 12px",
-          fontFamily: '"Press Start 2P", monospace',
-          fontSize: 8,
+          fontFamily: '"Segoe UI", "Noto Sans SC", system-ui, sans-serif',
+          fontSize: 12,
           color: "#222",
           lineHeight: 1.7,
         }}
@@ -252,7 +252,7 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
         {/* Agent name */}
         <div
           style={{
-            fontSize: 10,
+            fontSize: 14,
             fontWeight: "bold",
             marginBottom: 6,
             color: "#1a1a2e",
@@ -290,7 +290,7 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
         <div
           style={{
             color: "#999",
-            fontSize: 7,
+            fontSize: 11,
             marginTop: 6,
             borderTop: "1px dashed #d4c89a",
             paddingTop: 4,
@@ -303,7 +303,7 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
         {(() => {
           const seatName = _seatIndexLookup?.(session.key);
           return seatName ? (
-            <div style={{ color: "#b07030", fontSize: 7, marginTop: 3 }}>
+            <div style={{ color: "#b07030", fontSize: 11, marginTop: 3 }}>
               💺 {seatName}
             </div>
           ) : null;

@@ -138,6 +138,7 @@ const PixelTitleButton: React.FC<{
 
 export const PixelWindowControls: React.FC = () => {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [barHovered, setBarHovered] = useState(false);
 
   const handleMinimize = useCallback(async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -156,78 +157,60 @@ export const PixelWindowControls: React.FC = () => {
   }, []);
 
   const handleCloseConfirm = useCallback(async () => {
-    // Stop gateway
     useAppStore.getState().setStopPending(true);
     useGatewayStore.getState().disconnect();
     try { await stopOpenClaw(); } catch { /* ignore */ }
-
-    // Exit app
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     getCurrentWindow().close();
   }, []);
 
   return (
     <>
-      {/* Pixel-art title bar */}
+      {/* Title bar — semi-transparent, fully visible on hover */}
       <div
         data-tauri-drag-region
+        onMouseEnter={() => setBarHovered(true)}
+        onMouseLeave={() => setBarHovered(false)}
         style={{
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
-          height: 36,
+          height: 30,
           zIndex: 200,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 2px 0 10px",
-          background: "#1a1a2e",
-          borderBottom: "2px solid #0d0d1a",
-          boxShadow: "0 2px 0 #2a2a4a",
+          justifyContent: "flex-end",
+          padding: "0 0 0 10px",
+          background: barHovered ? "rgba(10,10,20,0.85)" : "rgba(10,10,20,0.15)",
+          transition: "background 0.2s, opacity 0.2s",
           pointerEvents: "auto",
         }}
       >
-        {/* Title */}
+        {/* Title — only visible on hover */}
         <div
           data-tauri-drag-region
           style={{
+            flex: 1,
             fontFamily: PIXEL_FONT,
-            fontSize: 10,
-            color: "#8888aa",
+            fontSize: 9,
+            color: barHovered ? "rgba(255,255,255,0.6)" : "transparent",
+            transition: "color 0.2s",
             pointerEvents: "none",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
           }}
         >
-          <span style={{ fontSize: 14 }}>🦞</span>
-          <span>OpenClaw Wallpaper</span>
+          🦞 OpenClaw Wallpaper
         </div>
 
-        {/* Window controls — pixel buttons */}
-        <div style={{ display: "flex", gap: 0 }}>
-          <PixelTitleButton
-            icon="▁"
-            color="#6c8"
-            hoverColor="#8ea"
-            onClick={handleMinimize}
-            title="最小化"
-          />
-          <PixelTitleButton
-            icon="▣"
-            color="#68c"
-            hoverColor="#8ae"
-            onClick={handleMaximize}
-            title="全屏/还原"
-          />
-          <PixelTitleButton
-            icon="✕"
-            color="#c44"
-            hoverColor="#f66"
-            onClick={() => setShowConfirm(true)}
-            title="关闭"
-          />
+        {/* Controls — subtle when idle, clear on hover */}
+        <div style={{
+          display: "flex",
+          opacity: barHovered ? 1 : 0.3,
+          transition: "opacity 0.2s",
+        }}>
+          <PixelTitleButton icon="─" color="#6c8" hoverColor="#8ea" onClick={handleMinimize} title="最小化" />
+          <PixelTitleButton icon="□" color="#68c" hoverColor="#8ae" onClick={handleMaximize} title="全屏/还原" />
+          <PixelTitleButton icon="✕" color="#c44" hoverColor="#f66" onClick={() => setShowConfirm(true)} title="关闭" />
         </div>
       </div>
 
