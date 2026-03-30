@@ -2,9 +2,10 @@
  * SettingsModal — Pixel-art control panel for OpenClaw management.
  *
  * Tabs:
- *   🔌 Gateway  — start/stop/restart, health, channel status
- *   🧠 Models   — view models, switch default
- *   ⚙️ Config   — gateway URL/port/token, config editor
+ *   🔌 Gateway   — start/stop/restart, health, channel status
+ *   🧠 Models    — view models, switch default
+ *   🔑 Providers — manage custom providers + env API keys
+ *   ⚙️ Config    — gateway URL/port/token, config editor
  */
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -13,6 +14,8 @@ import {
   useGatewayStore,
   type GatewayHealthDetail,
   type ModelInfo,
+  type ProviderDef,
+  type ProviderModelDef,
 } from "../../stores/gatewayStore";
 import { PIXEL_FONT, COLORS, pixelBorder, pixelButton, pixelInput } from "../../styles/pixel-theme";
 import {
@@ -23,7 +26,7 @@ import {
   restartOpenClaw,
 } from "../../utils/tauri-ipc";
 
-type Tab = "gateway" | "models" | "config";
+type Tab = "gateway" | "models" | "providers" | "config";
 
 export const SettingsModal: React.FC = () => {
   const settingsOpen = useAppStore((s) => s.settingsOpen);
@@ -49,7 +52,7 @@ export const SettingsModal: React.FC = () => {
     >
       <div
         style={{
-          width: 520,
+          width: 560,
           maxHeight: "85vh",
           background: COLORS.bg,
           ...pixelBorder(COLORS.accent),
@@ -85,6 +88,7 @@ export const SettingsModal: React.FC = () => {
           {([
             { id: "gateway", label: "🔌 Gateway" },
             { id: "models", label: "🧠 Models" },
+            { id: "providers", label: "🔑 Providers" },
             { id: "config", label: "⚙️ Config" },
           ] as const).map((tab) => (
             <button
@@ -105,6 +109,7 @@ export const SettingsModal: React.FC = () => {
         <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
           {activeTab === "gateway" && <GatewayTab />}
           {activeTab === "models" && <ModelsTab />}
+          {activeTab === "providers" && <ProvidersTab />}
           {activeTab === "config" && <ConfigTab />}
         </div>
       </div>
@@ -221,9 +226,8 @@ const GatewayTab: React.FC = () => {
 const ModelsTab: React.FC = () => {
   const connectionStatus = useGatewayStore((s) => s.connectionStatus);
   const fetchModels = useGatewayStore((s) => s.fetchModels);
-  const fetchConfig = useGatewayStore((s) => s.fetchConfig);
-  const setConfig = useGatewayStore((s) => s.setConfig);
-  const applyConfig = useGatewayStore((s) => s.applyConfig);
+  const fetchConfigFull = useGatewayStore((s) => s.fetchConfigFull);
+  const setDefaultModel = useGatewayStore((s) => s.setDefaultModel);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModel, setCurrentModel] = useState<string>("");
@@ -234,27 +238,36 @@ const ModelsTab: React.FC = () => {
     if (connectionStatus !== "connected") return;
     setLoading(true);
 
-    Promise.all([fetchModels(), fetchConfig()]).then(([m, config]) => {
+    Promise.all([fetchModels(), fetchConfigFull()]).then(([m, full]) => {
       setModels(m);
-      const primary = (config as Record<string, unknown>)?.agents as Record<string, unknown>;
-      const defaults = primary?.defaults as Record<string, unknown>;
-      const model = defaults?.model as Record<string, unknown>;
-      setCurrentModel((model?.primary as string) ?? "");
+      if (full) {
+        const agents = full.config.agents as Record<string, unknown> | undefined;
+        const defaults = agents?.defaults as Record<string, unknown> | undefined;
+        const model = defaults?.model as Record<string, unknown> | undefined;
+        setCurrentModel((model?.primary as string) ?? "");
+      }
       setLoading(false);
     });
-  }, [connectionStatus, fetchModels, fetchConfig]);
+  }, [connectionStatus, fetchModels, fetchConfigFull]);
 
   const handleSetDefault = useCallback(async (modelId: string) => {
     setSaving(true);
-    const ok = await setConfig("agents.defaults.model.primary", modelId);
+    const ok = await setDefaultModel(modelId);
     if (ok) {
-      await applyConfig();
       setCurrentModel(modelId);
     }
     setSaving(false);
-  }, [setConfig, applyConfig]);
+  }, [setDefaultModel]);
 
   if (loading) return <Dimmed>Loading models...</Dimmed>;
+
+  // Group models by provider
+  const grouped = new Map<string, ModelInfo[]>();
+  for (const m of models) {
+    const group = grouped.get(m.provider) ?? [];
+    group.push(m);
+    grouped.set(m.provider, group);
+  }
 
   return (
     <>
@@ -269,36 +282,476 @@ const ModelsTab: React.FC = () => {
 
       <SectionTitle>Available Models</SectionTitle>
       {models.length === 0 && <Dimmed>No models found</Dimmed>}
-      {models.map((m) => {
-        const fullId = `${m.provider}/${m.id}`;
-        const isCurrent = fullId === currentModel;
-        return (
-          <div key={fullId} style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "6px 8px", marginBottom: 4,
-            background: isCurrent ? "rgba(233,69,96,0.1)" : "transparent",
-            border: `1px solid ${isCurrent ? COLORS.accent : COLORS.inputBorder}`,
+      {Array.from(grouped.entries()).map(([provider, providerModels]) => (
+        <div key={provider} style={{ marginBottom: 12 }}>
+          <div style={{
+            fontFamily: PIXEL_FONT, fontSize: "8px", color: COLORS.textDim,
+            marginBottom: 4, textTransform: "uppercase",
           }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text }}>
-                {m.name || m.id}
+            ▸ {provider}
+          </div>
+          {providerModels.map((m) => {
+            const fullId = `${m.provider}/${m.id}`;
+            const isCurrent = fullId === currentModel;
+            return (
+              <div key={fullId} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "6px 8px", marginBottom: 4,
+                background: isCurrent ? "rgba(233,69,96,0.1)" : "transparent",
+                border: `1px solid ${isCurrent ? COLORS.accent : COLORS.inputBorder}`,
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text }}>
+                    {m.name || m.id}
+                  </div>
+                  <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim }}>
+                    {m.contextWindow ? `${(m.contextWindow / 1000).toFixed(0)}K ctx` : ""}
+                    {m.reasoning ? " · reasoning" : ""}
+                  </div>
+                </div>
+                {isCurrent ? (
+                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "8px", color: COLORS.success }}>✓ Active</span>
+                ) : (
+                  <button
+                    onClick={() => handleSetDefault(fullId)}
+                    disabled={saving}
+                    style={{ ...pixelButton, fontSize: "8px", padding: "3px 8px" }}
+                  >
+                    Use
+                  </button>
+                )}
               </div>
-              <div style={{ fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim }}>
-                {m.provider} · {m.contextWindow ? `${(m.contextWindow / 1000).toFixed(0)}K ctx` : ""}
-                {m.reasoning ? " · reasoning" : ""}
-              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+};
+
+// ═══════════════════════════════════════════════════════
+//  Providers Tab
+// ═══════════════════════════════════════════════════════
+
+/** Known built-in provider env var mappings */
+const BUILTIN_PROVIDERS: Array<{ name: string; envKey: string }> = [
+  { name: "Anthropic", envKey: "ANTHROPIC_API_KEY" },
+  { name: "OpenAI", envKey: "OPENAI_API_KEY" },
+  { name: "Google (Gemini)", envKey: "GOOGLE_AI_API_KEY" },
+  { name: "DeepSeek", envKey: "DEEPSEEK_API_KEY" },
+  { name: "Groq", envKey: "GROQ_API_KEY" },
+  { name: "xAI", envKey: "XAI_API_KEY" },
+  { name: "Mistral", envKey: "MISTRAL_API_KEY" },
+  { name: "OpenRouter", envKey: "OPENROUTER_API_KEY" },
+  { name: "Together AI", envKey: "TOGETHER_API_KEY" },
+];
+
+/** Mask an API key: show first 4 + last 4 chars */
+function maskApiKey(key: string | undefined | null): string {
+  if (!key || typeof key !== "string") return "—";
+  if (key.length <= 8) return "••••••••";
+  return `${key.slice(0, 4)}${"••••••"}${key.slice(-4)}`;
+}
+
+/** Empty model template */
+function emptyModelDef(): ProviderModelDef {
+  return { id: "", name: "", contextWindow: 128000 };
+}
+
+const ProvidersTab: React.FC = () => {
+  const connectionStatus = useGatewayStore((s) => s.connectionStatus);
+  const fetchConfigFull = useGatewayStore((s) => s.fetchConfigFull);
+  const addProviderFn = useGatewayStore((s) => s.addProvider);
+  const removeProviderFn = useGatewayStore((s) => s.removeProvider);
+  const updateProviderApiKeyFn = useGatewayStore((s) => s.updateProviderApiKey);
+
+  const [customProviders, setCustomProviders] = useState<Record<string, ProviderDef>>({});
+  const [envKeys, setEnvKeys] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  // Add form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formAlias, setFormAlias] = useState("");
+  const [formBaseUrl, setFormBaseUrl] = useState("");
+  const [formApiKey, setFormApiKey] = useState("");
+  const [formApiType, setFormApiType] = useState("openai-chat");
+  const [formModels, setFormModels] = useState<ProviderModelDef[]>([emptyModelDef()]);
+  const [formSaving, setFormSaving] = useState(false);
+
+  // Edit API key state
+  const [editingAlias, setEditingAlias] = useState<string | null>(null);
+  const [editApiKeyValue, setEditApiKeyValue] = useState("");
+
+  const loadProviders = useCallback(async () => {
+    setLoading(true);
+    const full = await fetchConfigFull();
+    if (full) {
+      const models = full.config.models as Record<string, unknown> | undefined;
+      const providers = (models?.providers ?? {}) as Record<string, ProviderDef>;
+      setCustomProviders(providers);
+      const env = (full.config.env ?? {}) as Record<string, string>;
+      setEnvKeys(env);
+    }
+    setLoading(false);
+  }, [fetchConfigFull]);
+
+  useEffect(() => {
+    if (connectionStatus === "connected") loadProviders();
+  }, [connectionStatus, loadProviders]);
+
+  const showMsg = useCallback((msg: string) => {
+    setActionMsg(msg);
+    setTimeout(() => setActionMsg(null), 4000);
+  }, []);
+
+  // ── Add Provider ──────────────────────────────────
+  const handleAddProvider = useCallback(async () => {
+    if (!formAlias.trim()) { showMsg("❌ Alias is required"); return; }
+    if (!formBaseUrl.trim()) { showMsg("❌ Base URL is required"); return; }
+
+    setFormSaving(true);
+    const provider: ProviderDef = {
+      baseUrl: formBaseUrl.trim(),
+      apiKey: formApiKey.trim() || undefined,
+      api: formApiType,
+      models: formModels.filter((m) => m.id.trim()),
+    };
+    const ok = await addProviderFn(formAlias.trim(), provider);
+    if (ok) {
+      showMsg("✅ Provider added");
+      setShowAddForm(false);
+      setFormAlias("");
+      setFormBaseUrl("");
+      setFormApiKey("");
+      setFormApiType("openai-chat");
+      setFormModels([emptyModelDef()]);
+      await loadProviders();
+    } else {
+      showMsg("❌ Failed to add provider");
+    }
+    setFormSaving(false);
+  }, [formAlias, formBaseUrl, formApiKey, formApiType, formModels, addProviderFn, loadProviders, showMsg]);
+
+  // ── Remove Provider ───────────────────────────────
+  const handleRemoveProvider = useCallback(async (alias: string) => {
+    const ok = await removeProviderFn(alias);
+    if (ok) {
+      showMsg(`✅ Removed "${alias}"`);
+      await loadProviders();
+    } else {
+      showMsg(`❌ Failed to remove "${alias}"`);
+    }
+  }, [removeProviderFn, loadProviders, showMsg]);
+
+  // ── Update API Key ────────────────────────────────
+  const handleUpdateApiKey = useCallback(async (alias: string) => {
+    if (!editApiKeyValue.trim()) { showMsg("❌ API Key is required"); return; }
+    const ok = await updateProviderApiKeyFn(alias, editApiKeyValue.trim());
+    if (ok) {
+      showMsg(`✅ API Key updated for "${alias}"`);
+      setEditingAlias(null);
+      setEditApiKeyValue("");
+      await loadProviders();
+    } else {
+      showMsg(`❌ Failed to update API Key`);
+    }
+  }, [editApiKeyValue, updateProviderApiKeyFn, loadProviders, showMsg]);
+
+  // ── Form model management ─────────────────────────
+  const updateFormModel = useCallback((index: number, field: keyof ProviderModelDef, value: string | number) => {
+    setFormModels((prev) => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  }, []);
+
+  const addFormModel = useCallback(() => {
+    setFormModels((prev) => [...prev, emptyModelDef()]);
+  }, []);
+
+  const removeFormModel = useCallback((index: number) => {
+    setFormModels((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  if (loading) return <Dimmed>Loading providers...</Dimmed>;
+
+  const providerEntries = Object.entries(customProviders);
+
+  return (
+    <>
+      {actionMsg && (
+        <div style={{
+          fontFamily: PIXEL_FONT, fontSize: "9px",
+          color: actionMsg.startsWith("✅") ? COLORS.success : COLORS.error,
+          marginBottom: 10, padding: "4px 8px",
+          background: "rgba(255,255,255,0.05)",
+          border: `1px solid ${COLORS.inputBorder}`,
+        }}>
+          {actionMsg}
+        </div>
+      )}
+
+      {/* ═══ Custom Providers ═══ */}
+      <SectionTitle>Custom Providers</SectionTitle>
+
+      {providerEntries.length === 0 && !showAddForm && (
+        <Dimmed>No custom providers configured</Dimmed>
+      )}
+
+      {providerEntries.map(([alias, prov]) => {
+        const apiKeyStr = typeof prov.apiKey === "string" ? prov.apiKey : undefined;
+        const modelCount = prov.models?.length ?? 0;
+        const hasApiKey = !!apiKeyStr;
+        const isEditing = editingAlias === alias;
+
+        return (
+          <div key={alias} style={{
+            marginBottom: 10,
+            padding: "10px 12px",
+            background: "rgba(255,255,255,0.03)",
+            ...pixelBorder(COLORS.borderDim),
+          }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textBright }}>
+                {alias}
+              </span>
+              <span style={{
+                fontFamily: PIXEL_FONT, fontSize: "7px",
+                color: hasApiKey ? COLORS.success : COLORS.warning,
+              }}>
+                {hasApiKey ? "✅ Configured" : "⚠️ No API Key"}
+              </span>
             </div>
-            {isCurrent ? (
-              <span style={{ fontFamily: PIXEL_FONT, fontSize: "8px", color: COLORS.success }}>✓ Active</span>
-            ) : (
-              <button
-                onClick={() => handleSetDefault(fullId)}
-                disabled={saving}
-                style={{ ...pixelButton, fontSize: "8px", padding: "3px 8px" }}
-              >
-                Use
-              </button>
+
+            {/* Details */}
+            {prov.baseUrl && (
+              <InfoRow label="Base URL" value={prov.baseUrl} />
             )}
+            <InfoRow label="API Key" value={maskApiKey(apiKeyStr)} />
+            {prov.api && (
+              <InfoRow label="API Type" value={prov.api} />
+            )}
+            <InfoRow label="Models" value={`${modelCount} model${modelCount !== 1 ? "s" : ""}`} />
+
+            {/* Model details */}
+            {prov.models && prov.models.length > 0 && (
+              <div style={{ marginTop: 4, paddingLeft: 8, borderLeft: `2px solid ${COLORS.borderDim}` }}>
+                {prov.models.map((m) => (
+                  <div key={m.id} style={{
+                    fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim,
+                    padding: "2px 0",
+                  }}>
+                    {m.name || m.id}
+                    {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
+                    {m.reasoning ? " · reasoning" : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Edit API Key inline */}
+            {isEditing && (
+              <div style={{ marginTop: 8, display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="password"
+                  value={editApiKeyValue}
+                  onChange={(e) => setEditApiKeyValue(e.target.value)}
+                  placeholder="New API Key"
+                  style={{ ...pixelInput, flex: 1, fontSize: "9px" }}
+                />
+                <button
+                  onClick={() => handleUpdateApiKey(alias)}
+                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 8px" }}
+                >
+                  💾
+                </button>
+                <button
+                  onClick={() => { setEditingAlias(null); setEditApiKeyValue(""); }}
+                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 8px", background: COLORS.bgPanel }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Actions */}
+            {!isEditing && (
+              <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => { setEditingAlias(alias); setEditApiKeyValue(""); }}
+                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 10px", background: COLORS.bgPanel }}
+                >
+                  ✏️ Edit Key
+                </button>
+                <button
+                  onClick={() => handleRemoveProvider(alias)}
+                  style={{ ...pixelButton, fontSize: "8px", padding: "4px 10px", background: COLORS.error }}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* ═══ Add Provider Form ═══ */}
+      {!showAddForm ? (
+        <div style={{ marginTop: 8, marginBottom: 16 }}>
+          <button
+            onClick={() => setShowAddForm(true)}
+            style={{ ...pixelButton, fontSize: "9px", padding: "6px 14px" }}
+          >
+            + Add Provider
+          </button>
+        </div>
+      ) : (
+        <div style={{
+          marginTop: 8, marginBottom: 16,
+          padding: "12px",
+          background: "rgba(255,255,255,0.03)",
+          ...pixelBorder(COLORS.accent),
+        }}>
+          <div style={{
+            fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.accent,
+            marginBottom: 10,
+          }}>
+            New Provider
+          </div>
+
+          <SettingsField label="Provider Alias">
+            <input
+              type="text"
+              value={formAlias}
+              onChange={(e) => setFormAlias(e.target.value)}
+              placeholder="my-provider"
+              style={pixelInput}
+            />
+          </SettingsField>
+
+          <SettingsField label="Base URL">
+            <input
+              type="text"
+              value={formBaseUrl}
+              onChange={(e) => setFormBaseUrl(e.target.value)}
+              placeholder="https://api.example.com"
+              style={pixelInput}
+            />
+          </SettingsField>
+
+          <SettingsField label="API Key">
+            <input
+              type="password"
+              value={formApiKey}
+              onChange={(e) => setFormApiKey(e.target.value)}
+              placeholder="sk-..."
+              style={pixelInput}
+            />
+          </SettingsField>
+
+          <SettingsField label="API Type">
+            <select
+              value={formApiType}
+              onChange={(e) => setFormApiType(e.target.value)}
+              style={{ ...pixelInput, cursor: "pointer" }}
+            >
+              <option value="openai-chat">openai-chat</option>
+              <option value="anthropic-messages">anthropic-messages</option>
+              <option value="other">other</option>
+            </select>
+          </SettingsField>
+
+          {/* Models */}
+          <div style={{
+            fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.textDim,
+            marginTop: 10, marginBottom: 6,
+          }}>
+            Models
+          </div>
+          {formModels.map((m, i) => (
+            <div key={i} style={{
+              display: "flex", gap: 6, marginBottom: 6, alignItems: "center",
+            }}>
+              <input
+                type="text"
+                value={m.id}
+                onChange={(e) => updateFormModel(i, "id", e.target.value)}
+                placeholder="model-id"
+                style={{ ...pixelInput, flex: 2, fontSize: "9px" }}
+              />
+              <input
+                type="text"
+                value={m.name ?? ""}
+                onChange={(e) => updateFormModel(i, "name", e.target.value)}
+                placeholder="Display Name"
+                style={{ ...pixelInput, flex: 2, fontSize: "9px" }}
+              />
+              <input
+                type="number"
+                value={m.contextWindow ?? ""}
+                onChange={(e) => updateFormModel(i, "contextWindow", parseInt(e.target.value, 10) || 0)}
+                placeholder="ctx"
+                style={{ ...pixelInput, flex: 1, fontSize: "9px" }}
+              />
+              {formModels.length > 1 && (
+                <button
+                  onClick={() => removeFormModel(i)}
+                  style={{ ...pixelButton, fontSize: "8px", padding: "2px 6px", background: COLORS.error }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addFormModel}
+            style={{ ...pixelButton, fontSize: "8px", padding: "3px 10px", background: COLORS.bgPanel, marginBottom: 10 }}
+          >
+            + Model
+          </button>
+
+          {/* Form actions */}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+            <button
+              onClick={() => { setShowAddForm(false); setFormAlias(""); setFormBaseUrl(""); setFormApiKey(""); setFormApiType("openai-chat"); setFormModels([emptyModelDef()]); }}
+              style={{ ...pixelButton, fontSize: "9px", padding: "6px 12px", background: COLORS.bgPanel }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddProvider}
+              disabled={formSaving}
+              style={{ ...pixelButton, fontSize: "9px", padding: "6px 12px" }}
+            >
+              {formSaving ? "Saving..." : "💾 Save Provider"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Built-in Provider Env Keys ═══ */}
+      <SectionTitle>Built-in Provider Status</SectionTitle>
+      {BUILTIN_PROVIDERS.map(({ name, envKey }) => {
+        const value = envKeys[envKey];
+        const configured = !!value;
+        return (
+          <div key={envKey} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "5px 0", borderBottom: `1px solid ${COLORS.inputBorder}`,
+          }}>
+            <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text, flex: 1 }}>
+              {name}
+            </span>
+            <span style={{
+              fontFamily: PIXEL_FONT, fontSize: "7px", color: COLORS.textDim,
+            }}>
+              {envKey}
+            </span>
+            <span style={{
+              fontFamily: PIXEL_FONT, fontSize: "8px",
+              color: configured ? COLORS.success : COLORS.textDim,
+            }}>
+              {configured ? `✅ ${maskApiKey(value)}` : "⚪ Not set"}
+            </span>
           </div>
         );
       })}
@@ -408,7 +861,10 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
     <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.textDim }}>{label}</span>
-    <span style={{ fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text }}>{value}</span>
+    <span style={{
+      fontFamily: PIXEL_FONT, fontSize: "9px", color: COLORS.text,
+      maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+    }}>{value}</span>
   </div>
 );
 

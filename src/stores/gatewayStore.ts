@@ -45,6 +45,32 @@ export interface ModelInfo {
   reasoning?: boolean;
 }
 
+/** Provider model definition inside config */
+export interface ProviderModelDef {
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+/** Provider definition inside config.models.providers */
+export interface ProviderDef {
+  baseUrl?: string;
+  apiKey?: string | Record<string, unknown>;
+  api?: string;
+  models?: ProviderModelDef[];
+}
+
+/** Full config response from config.get */
+export interface ConfigFull {
+  config: Record<string, unknown>;
+  raw: string;
+  hash: string;
+}
+
 // ─── Singleton client instance ───────────────────────────────
 
 let client: GatewayClient | null = null;
@@ -104,6 +130,24 @@ interface GatewayState {
 
   /** Fetch available models */
   fetchModels: () => Promise<ModelInfo[]>;
+
+  /** Fetch full config (raw + config object + hash) */
+  fetchConfigFull: () => Promise<ConfigFull | null>;
+
+  /** Apply raw config JSON with hot-reload */
+  applyConfigRaw: (raw: string, baseHash: string) => Promise<boolean>;
+
+  /** Set the default model (read → modify → write → refresh) */
+  setDefaultModel: (modelId: string) => Promise<boolean>;
+
+  /** Add a custom provider */
+  addProvider: (alias: string, provider: ProviderDef) => Promise<boolean>;
+
+  /** Remove a custom provider */
+  removeProvider: (alias: string) => Promise<boolean>;
+
+  /** Update a provider's API key */
+  updateProviderApiKey: (alias: string, apiKey: string) => Promise<boolean>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -422,6 +466,132 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     } catch (err) {
       console.warn("[gatewayStore] fetchModels failed:", err);
       return [];
+    }
+  },
+
+  // ── fetchConfigFull ────────────────────────────────
+
+  fetchConfigFull: async (): Promise<ConfigFull | null> => {
+    if (!client || client.status !== "connected") return null;
+
+    try {
+      const res = await client.call<{ config?: Record<string, unknown>; raw?: string; hash?: string }>(
+        "config.get",
+        {},
+      );
+      if (!res?.config || !res?.raw || !res?.hash) return null;
+      return { config: res.config, raw: res.raw, hash: res.hash };
+    } catch (err) {
+      console.warn("[gatewayStore] fetchConfigFull failed:", err);
+      return null;
+    }
+  },
+
+  // ── applyConfigRaw ─────────────────────────────────
+
+  applyConfigRaw: async (raw: string, baseHash: string): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("config.apply", { raw, baseHash }, 30_000);
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] applyConfigRaw failed:", err);
+      return false;
+    }
+  },
+
+  // ── setDefaultModel ────────────────────────────────
+
+  setDefaultModel: async (modelId: string): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      // Ensure nested path exists
+      if (!config.agents) config.agents = {};
+      const agents = config.agents as Record<string, unknown>;
+      if (!agents.defaults) agents.defaults = {};
+      const defaults = agents.defaults as Record<string, unknown>;
+      if (!defaults.model) defaults.model = {};
+      const model = defaults.model as Record<string, unknown>;
+      model.primary = modelId;
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] setDefaultModel failed:", err);
+      return false;
+    }
+  },
+
+  // ── addProvider ────────────────────────────────────
+
+  addProvider: async (alias: string, provider: ProviderDef): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      if (!config.models) config.models = {};
+      const models = config.models as Record<string, unknown>;
+      if (!models.providers) models.providers = {};
+      const providers = models.providers as Record<string, unknown>;
+      providers[alias] = provider;
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] addProvider failed:", err);
+      return false;
+    }
+  },
+
+  // ── removeProvider ─────────────────────────────────
+
+  removeProvider: async (alias: string): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      const models = config.models as Record<string, unknown> | undefined;
+      const providers = models?.providers as Record<string, unknown> | undefined;
+      if (!providers || !(alias in providers)) return false;
+      delete providers[alias];
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] removeProvider failed:", err);
+      return false;
+    }
+  },
+
+  // ── updateProviderApiKey ───────────────────────────
+
+  updateProviderApiKey: async (alias: string, apiKey: string): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      const models = config.models as Record<string, unknown> | undefined;
+      const providers = models?.providers as Record<string, unknown> | undefined;
+      if (!providers || !(alias in providers)) return false;
+      const provider = providers[alias] as Record<string, unknown>;
+      provider.apiKey = apiKey;
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] updateProviderApiKey failed:", err);
+      return false;
     }
   },
 }));
