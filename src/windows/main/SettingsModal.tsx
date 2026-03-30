@@ -367,6 +367,7 @@ const ProvidersTab: React.FC = () => {
 
   const [customProviders, setCustomProviders] = useState<Record<string, ProviderDef>>({});
   const [envKeys, setEnvKeys] = useState<Record<string, string>>({});
+  const [defaultModel, setDefaultModel] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
@@ -394,6 +395,11 @@ const ProvidersTab: React.FC = () => {
       setCustomProviders(providers);
       const env = (full.config.env ?? {}) as Record<string, string>;
       setEnvKeys(env);
+      // Extract default model
+      const agents = full.config.agents as Record<string, unknown> | undefined;
+      const defaults = agents?.defaults as Record<string, unknown> | undefined;
+      const model = defaults?.model as Record<string, unknown> | undefined;
+      setDefaultModel((model?.primary as string) ?? "");
     }
     setLoading(false);
   }, [fetchConfigFull]);
@@ -553,19 +559,33 @@ const ProvidersTab: React.FC = () => {
         const modelCount = prov.models?.length ?? 0;
         const hasApiKey = !!apiKeyStr;
         const isEditing = editingAlias === alias;
+        // Check if any model under this provider is the current default
+        const defaultModelProvider = defaultModel.split("/")[0];
+        const isActiveProvider = defaultModelProvider === alias;
 
         return (
           <div key={alias} style={{
             marginBottom: 12,
             padding: "12px 14px",
-            background: "rgba(255,255,255,0.03)",
-            ...pixelBorder(COLORS.borderDim),
+            background: isActiveProvider ? "rgba(68,255,136,0.05)" : "rgba(255,255,255,0.03)",
+            ...pixelBorder(isActiveProvider ? COLORS.success : COLORS.borderDim),
           }}>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textBright }}>
-                {alias}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontFamily: PIXEL_FONT, fontSize: "13px", color: COLORS.textBright }}>
+                  {alias}
+                </span>
+                {isActiveProvider && (
+                  <span style={{
+                    fontFamily: PIXEL_FONT, fontSize: "10px",
+                    color: COLORS.bg, background: COLORS.success,
+                    padding: "2px 6px",
+                  }}>
+                    ★ IN USE
+                  </span>
+                )}
+              </div>
               <span style={{
                 fontFamily: PIXEL_FONT, fontSize: "10px",
                 color: hasApiKey ? COLORS.success : COLORS.warning,
@@ -587,16 +607,26 @@ const ProvidersTab: React.FC = () => {
             {/* Model details */}
             {prov.models && prov.models.length > 0 && (
               <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${COLORS.borderDim}` }}>
-                {prov.models.map((m) => (
-                  <div key={m.id} style={{
-                    fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
-                    padding: "3px 0",
-                  }}>
-                    {m.name || m.id}
-                    {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
-                    {m.reasoning ? " · reasoning" : ""}
-                  </div>
-                ))}
+                {prov.models.map((m) => {
+                  const fullModelId = `${alias}/${m.id}`;
+                  const isDefault = fullModelId === defaultModel;
+                  return (
+                    <div key={m.id} style={{
+                      fontFamily: PIXEL_FONT, fontSize: "10px",
+                      color: isDefault ? COLORS.success : COLORS.textDim,
+                      padding: "3px 0",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      {isDefault && <span>🧠</span>}
+                      <span>
+                        {m.name || m.id}
+                        {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
+                        {m.reasoning ? " · reasoning" : ""}
+                        {isDefault ? " (default)" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -627,7 +657,12 @@ const ProvidersTab: React.FC = () => {
 
             {/* Actions */}
             {!isEditing && (
-              <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                {isActiveProvider && (
+                  <span style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.warning, marginRight: "auto" }}>
+                    ⚠️ Active provider
+                  </span>
+                )}
                 <button
                   onClick={() => { setEditingAlias(alias); setEditApiKeyValue(""); }}
                   style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.bgPanel }}
@@ -636,7 +671,14 @@ const ProvidersTab: React.FC = () => {
                 </button>
                 <button
                   onClick={() => handleRemoveProvider(alias)}
-                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.error }}
+                  disabled={isActiveProvider}
+                  title={isActiveProvider ? "Cannot delete — this provider has the active default model" : ""}
+                  style={{
+                    ...pixelButton, fontSize: "11px", padding: "6px 12px",
+                    background: isActiveProvider ? COLORS.textDim : COLORS.error,
+                    cursor: isActiveProvider ? "not-allowed" : "pointer",
+                    opacity: isActiveProvider ? 0.5 : 1,
+                  }}
                 >
                   🗑️ Delete
                 </button>
