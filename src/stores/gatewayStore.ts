@@ -148,6 +148,9 @@ interface GatewayState {
 
   /** Update a provider's API key */
   updateProviderApiKey: (alias: string, apiKey: string) => Promise<boolean>;
+
+  /** Remove a single model from a provider */
+  removeModelFromProvider: (alias: string, modelId: string) => Promise<boolean>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -548,6 +551,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   // ── addProvider ────────────────────────────────────
+  // If the alias already exists, merges new models into the existing
+  // provider (deduped by model id). Otherwise creates a new provider.
 
   addProvider: async (alias: string, provider: ProviderDef): Promise<boolean> => {
     const store = get();
@@ -560,7 +565,21 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       const models = config.models as Record<string, unknown>;
       if (!models.providers) models.providers = {};
       const providers = models.providers as Record<string, unknown>;
-      providers[alias] = provider;
+
+      const existing = providers[alias] as ProviderDef | undefined;
+      if (existing) {
+        // Merge: update connection info if provided, append new models
+        if (provider.baseUrl) existing.baseUrl = provider.baseUrl;
+        if (provider.apiKey) existing.apiKey = provider.apiKey;
+        if (provider.api) existing.api = provider.api;
+        // Merge models: add new ones, skip duplicates by id
+        const existingIds = new Set((existing.models ?? []).map((m) => m.id));
+        const newModels = (provider.models ?? []).filter((m) => !existingIds.has(m.id));
+        existing.models = [...(existing.models ?? []), ...newModels];
+        providers[alias] = existing;
+      } else {
+        providers[alias] = provider;
+      }
 
       const raw = JSON.stringify(config, null, 2) + "\n";
       return await store.applyConfigRaw(raw, full.hash);
@@ -611,6 +630,30 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       return await store.applyConfigRaw(raw, full.hash);
     } catch (err) {
       console.warn("[gatewayStore] updateProviderApiKey failed:", err);
+      return false;
+    }
+  },
+
+  // ── removeModelFromProvider ────────────────────────
+
+  removeModelFromProvider: async (alias: string, modelId: string): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      const models = config.models as Record<string, unknown> | undefined;
+      const providers = models?.providers as Record<string, unknown> | undefined;
+      if (!providers || !(alias in providers)) return false;
+      const provider = providers[alias] as ProviderDef;
+      if (!provider.models) return false;
+      provider.models = provider.models.filter((m) => m.id !== modelId);
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] removeModelFromProvider failed:", err);
       return false;
     }
   },

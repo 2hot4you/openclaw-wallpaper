@@ -364,6 +364,7 @@ const ProvidersTab: React.FC = () => {
   const addProviderFn = useGatewayStore((s) => s.addProvider);
   const removeProviderFn = useGatewayStore((s) => s.removeProvider);
   const updateProviderApiKeyFn = useGatewayStore((s) => s.updateProviderApiKey);
+  const removeModelFn = useGatewayStore((s) => s.removeModelFromProvider);
 
   const [customProviders, setCustomProviders] = useState<Record<string, ProviderDef>>({});
   const [envKeys, setEnvKeys] = useState<Record<string, string>>({});
@@ -385,6 +386,12 @@ const ProvidersTab: React.FC = () => {
   // Edit API key state
   const [editingAlias, setEditingAlias] = useState<string | null>(null);
   const [editApiKeyValue, setEditApiKeyValue] = useState("");
+
+  // Add model to existing provider state
+  const [addingModelAlias, setAddingModelAlias] = useState<string | null>(null);
+  const [newModelId, setNewModelId] = useState("");
+  const [newModelName, setNewModelName] = useState("");
+  const [newModelCtx, setNewModelCtx] = useState(128000);
 
   const loadProviders = useCallback(async () => {
     setLoading(true);
@@ -509,6 +516,42 @@ const ProvidersTab: React.FC = () => {
     setFormModels((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  // ── Add model to existing provider ────────────────
+  const handleAddModelToProvider = useCallback(async (alias: string) => {
+    if (!newModelId.trim()) { showMsg("❌ Model ID is required"); return; }
+    const ok = await addProviderFn(alias, {
+      models: [{ id: newModelId.trim(), name: newModelName.trim() || undefined, contextWindow: newModelCtx }],
+    });
+    if (ok) {
+      showMsg(`✅ Model added to "${alias}" — restart to apply`);
+      setNeedsRestart(true);
+      setAddingModelAlias(null);
+      setNewModelId("");
+      setNewModelName("");
+      setNewModelCtx(128000);
+      await loadProviders();
+    } else {
+      showMsg("❌ Failed to add model");
+    }
+  }, [newModelId, newModelName, newModelCtx, addProviderFn, loadProviders, showMsg]);
+
+  // ── Remove model from provider ────────────────────
+  const handleRemoveModel = useCallback(async (alias: string, modelId: string) => {
+    const fullModelId = `${alias}/${modelId}`;
+    if (fullModelId === defaultModel) {
+      showMsg("❌ Cannot remove the active default model");
+      return;
+    }
+    const ok = await removeModelFn(alias, modelId);
+    if (ok) {
+      showMsg(`✅ Model "${modelId}" removed — restart to apply`);
+      setNeedsRestart(true);
+      await loadProviders();
+    } else {
+      showMsg(`❌ Failed to remove model`);
+    }
+  }, [defaultModel, removeModelFn, loadProviders, showMsg]);
+
   if (loading) return <Dimmed>Loading providers...</Dimmed>;
 
   const providerEntries = Object.entries(customProviders);
@@ -618,15 +661,74 @@ const ProvidersTab: React.FC = () => {
                       display: "flex", alignItems: "center", gap: 6,
                     }}>
                       {isDefault && <span>🧠</span>}
-                      <span>
+                      <span style={{ flex: 1 }}>
                         {m.name || m.id}
                         {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
                         {m.reasoning ? " · reasoning" : ""}
                         {isDefault ? " (default)" : ""}
                       </span>
+                      {!isDefault && (
+                        <button
+                          onClick={() => handleRemoveModel(alias, m.id)}
+                          style={{
+                            ...pixelButton, fontSize: "9px", padding: "1px 5px",
+                            background: "transparent", border: "none", boxShadow: "none",
+                            color: COLORS.textDim, cursor: "pointer",
+                          }}
+                          title={`Remove ${m.id}`}
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Add model inline form */}
+            {addingModelAlias === alias && (
+              <div style={{ marginTop: 8, padding: "8px", background: "rgba(255,255,255,0.02)", border: `1px solid ${COLORS.inputBorder}` }}>
+                <div style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.accent, marginBottom: 6 }}>
+                  Add Model to {alias}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    value={newModelId}
+                    onChange={(e) => setNewModelId(e.target.value)}
+                    placeholder="model-id"
+                    style={{ ...pixelInput, flex: 2, fontSize: "11px" }}
+                  />
+                  <input
+                    type="text"
+                    value={newModelName}
+                    onChange={(e) => setNewModelName(e.target.value)}
+                    placeholder="Display Name"
+                    style={{ ...pixelInput, flex: 2, fontSize: "11px" }}
+                  />
+                  <input
+                    type="number"
+                    value={newModelCtx}
+                    onChange={(e) => setNewModelCtx(parseInt(e.target.value, 10) || 0)}
+                    placeholder="ctx"
+                    style={{ ...pixelInput, flex: 1, fontSize: "11px" }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => { setAddingModelAlias(null); setNewModelId(""); setNewModelName(""); setNewModelCtx(128000); }}
+                    style={{ ...pixelButton, fontSize: "10px", padding: "4px 10px", background: COLORS.bgPanel }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleAddModelToProvider(alias)}
+                    style={{ ...pixelButton, fontSize: "10px", padding: "4px 10px" }}
+                  >
+                    💾 Add
+                  </button>
+                </div>
               </div>
             )}
 
@@ -656,13 +758,19 @@ const ProvidersTab: React.FC = () => {
             )}
 
             {/* Actions */}
-            {!isEditing && (
+            {!isEditing && addingModelAlias !== alias && (
               <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                 {isActiveProvider && (
                   <span style={{ fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.warning, marginRight: "auto" }}>
                     ⚠️ Active provider
                   </span>
                 )}
+                <button
+                  onClick={() => { setAddingModelAlias(alias); setNewModelId(""); setNewModelName(""); setNewModelCtx(128000); }}
+                  style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.bgPanel }}
+                >
+                  + Model
+                </button>
                 <button
                   onClick={() => { setEditingAlias(alias); setEditApiKeyValue(""); }}
                   style={{ ...pixelButton, fontSize: "11px", padding: "6px 12px", background: COLORS.bgPanel }}
