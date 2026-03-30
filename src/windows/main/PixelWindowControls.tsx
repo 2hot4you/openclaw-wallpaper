@@ -9,7 +9,7 @@
 import React, { useState, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useGatewayStore } from "../../stores/gatewayStore";
-import { PIXEL_FONT, COLORS } from "../../styles/pixel-theme";
+import { PIXEL_FONT } from "../../styles/pixel-theme";
 import {
   stopOpenClaw,
 } from "../../utils/tauri-ipc";
@@ -97,14 +97,15 @@ const PixelConfirmDialog: React.FC<{
   </div>
 );
 
-// ── Window Control Button ───────────────────────────────────
+// ── Pixel Title Button ──────────────────────────────────────
 
-const ControlButton: React.FC<{
+const PixelTitleButton: React.FC<{
   icon: string;
-  hoverBg: string;
+  color: string;
+  hoverColor: string;
   onClick: () => void;
   title: string;
-}> = ({ icon, hoverBg, onClick, title }) => {
+}> = ({ icon, color, hoverColor, onClick, title }) => {
   const [hovered, setHovered] = useState(false);
   return (
     <button
@@ -113,19 +114,19 @@ const ControlButton: React.FC<{
       onMouseLeave={() => setHovered(false)}
       title={title}
       style={{
-        width: 28,
-        height: 22,
+        width: 36,
+        height: 28,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: hovered ? hoverBg : "transparent",
+        background: hovered ? "rgba(255,255,255,0.08)" : "transparent",
         border: "none",
+        borderLeft: "1px solid #2a2a4a",
         cursor: "pointer",
         fontFamily: PIXEL_FONT,
-        fontSize: 10,
-        color: hovered ? "#fff" : COLORS.textDim,
-        transition: "background 0.1s",
-        borderRadius: 3,
+        fontSize: 12,
+        color: hovered ? hoverColor : color,
+        transition: "color 0.1s, background 0.1s",
       }}
     >
       {icon}
@@ -167,7 +168,7 @@ export const PixelWindowControls: React.FC = () => {
 
   return (
     <>
-      {/* Draggable title bar area */}
+      {/* Pixel-art title bar */}
       <div
         data-tauri-drag-region
         style={{
@@ -175,14 +176,15 @@ export const PixelWindowControls: React.FC = () => {
           top: 0,
           left: 0,
           right: 0,
-          height: 32,
+          height: 36,
           zIndex: 200,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 4px 0 10px",
-          background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 100%)",
-          // Allow clicks to pass through to Phaser except on buttons
+          padding: "0 2px 0 10px",
+          background: "#1a1a2e",
+          borderBottom: "2px solid #0d0d1a",
+          boxShadow: "0 2px 0 #2a2a4a",
           pointerEvents: "auto",
         }}
       >
@@ -191,19 +193,41 @@ export const PixelWindowControls: React.FC = () => {
           data-tauri-drag-region
           style={{
             fontFamily: PIXEL_FONT,
-            fontSize: 9,
-            color: "rgba(255,255,255,0.6)",
+            fontSize: 10,
+            color: "#8888aa",
             pointerEvents: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          🦞 OpenClaw Wallpaper
+          <span style={{ fontSize: 14 }}>🦞</span>
+          <span>OpenClaw Wallpaper</span>
         </div>
 
-        {/* Window controls */}
-        <div style={{ display: "flex", gap: 2 }}>
-          <ControlButton icon="─" hoverBg="rgba(255,255,255,0.15)" onClick={handleMinimize} title="最小化" />
-          <ControlButton icon="□" hoverBg="rgba(255,255,255,0.15)" onClick={handleMaximize} title="全屏/还原" />
-          <ControlButton icon="✕" hoverBg="#cc4444" onClick={() => setShowConfirm(true)} title="关闭" />
+        {/* Window controls — pixel buttons */}
+        <div style={{ display: "flex", gap: 0 }}>
+          <PixelTitleButton
+            icon="▁"
+            color="#6c8"
+            hoverColor="#8ea"
+            onClick={handleMinimize}
+            title="最小化"
+          />
+          <PixelTitleButton
+            icon="▣"
+            color="#68c"
+            hoverColor="#8ae"
+            onClick={handleMaximize}
+            title="全屏/还原"
+          />
+          <PixelTitleButton
+            icon="✕"
+            color="#c44"
+            hoverColor="#f66"
+            onClick={() => setShowConfirm(true)}
+            title="关闭"
+          />
         </div>
       </div>
 
