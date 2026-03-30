@@ -354,7 +354,7 @@ export class AgentSprite {
       alpha: 0,
       scaleX: 0.5,
       scaleY: 0.5,
-      duration: 300,
+      duration: 800,
       ease: "Power2",
       onComplete: () => {
         this.destroy();
