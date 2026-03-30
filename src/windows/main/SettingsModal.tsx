@@ -365,6 +365,7 @@ const ProvidersTab: React.FC = () => {
   const removeProviderFn = useGatewayStore((s) => s.removeProvider);
   const updateProviderApiKeyFn = useGatewayStore((s) => s.updateProviderApiKey);
   const removeModelFn = useGatewayStore((s) => s.removeModelFromProvider);
+  const setDefaultModelFn = useGatewayStore((s) => s.setDefaultModel);
 
   const [customProviders, setCustomProviders] = useState<Record<string, ProviderDef>>({});
   const [envKeys, setEnvKeys] = useState<Record<string, string>>({});
@@ -373,6 +374,7 @@ const ProvidersTab: React.FC = () => {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [switchingModel, setSwitchingModel] = useState(false);
 
   // Add form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -446,6 +448,19 @@ const ProvidersTab: React.FC = () => {
       setRestarting(false);
     }
   }, [connect, disconnect, showMsg]);
+
+  // ── Switch default model ───────────────────────────
+  const handleSwitchModel = useCallback(async (fullModelId: string) => {
+    setSwitchingModel(true);
+    const ok = await setDefaultModelFn(fullModelId);
+    if (ok) {
+      setDefaultModel(fullModelId);
+      showMsg(`✅ Default model → ${fullModelId}`);
+    } else {
+      showMsg("❌ Failed to switch model");
+    }
+    setSwitchingModel(false);
+  }, [setDefaultModelFn, showMsg]);
 
   // ── Add Provider ──────────────────────────────────
   const handleAddProvider = useCallback(async () => {
@@ -656,17 +671,34 @@ const ProvidersTab: React.FC = () => {
                   return (
                     <div key={m.id} style={{
                       fontFamily: PIXEL_FONT, fontSize: "10px",
-                      color: isDefault ? COLORS.success : COLORS.textDim,
-                      padding: "3px 0",
+                      color: isDefault ? COLORS.success : COLORS.text,
+                      padding: "4px 0",
                       display: "flex", alignItems: "center", gap: 6,
+                      borderBottom: `1px solid ${COLORS.inputBorder}`,
                     }}>
-                      {isDefault && <span>🧠</span>}
+                      {isDefault ? <span>🧠</span> : <span style={{ width: 16 }} />}
                       <span style={{ flex: 1 }}>
                         {m.name || m.id}
                         {m.contextWindow ? ` · ${(m.contextWindow / 1000).toFixed(0)}K` : ""}
                         {m.reasoning ? " · reasoning" : ""}
-                        {isDefault ? " (default)" : ""}
                       </span>
+                      {isDefault ? (
+                        <span style={{
+                          fontFamily: PIXEL_FONT, fontSize: "9px",
+                          color: COLORS.bg, background: COLORS.success,
+                          padding: "1px 6px",
+                        }}>
+                          ✓ Active
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleSwitchModel(fullModelId)}
+                          disabled={switchingModel}
+                          style={{ ...pixelButton, fontSize: "9px", padding: "2px 8px" }}
+                        >
+                          Use
+                        </button>
+                      )}
                       {!isDefault && (
                         <button
                           onClick={() => handleRemoveModel(alias, m.id)}
