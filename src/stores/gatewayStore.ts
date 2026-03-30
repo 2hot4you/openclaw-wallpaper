@@ -419,8 +419,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     if (!client || client.status !== "connected") return null;
 
     try {
-      const raw = await client.call<{ parsed?: Record<string, unknown> }>("config.get", {});
-      return raw?.parsed ?? null;
+      const raw = await client.call<{ config?: Record<string, unknown>; parsed?: Record<string, unknown> }>("config.get", {});
+      return raw?.config ?? raw?.parsed ?? null;
     } catch (err) {
       console.warn("[gatewayStore] fetchConfig failed:", err);
       return null;
@@ -428,12 +428,33 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   // ── setConfig ──────────────────────────────────────
+  // Legacy path-based setter. Now uses read→modify→write via config.set
+  // to avoid config.apply which triggers CMD popups on Windows.
 
   setConfig: async (path: string, value: unknown): Promise<boolean> => {
     if (!client || client.status !== "connected") return false;
 
     try {
-      await client.call("config.set", { path, value });
+      // Read current config
+      const res = await client.call<{ config?: Record<string, unknown>; raw?: string; hash?: string }>(
+        "config.get",
+        {},
+      );
+      if (!res?.config || !res?.raw || !res?.hash) return false;
+
+      // Set the value at the given dot-path
+      const parts = path.split(".");
+      let obj: Record<string, unknown> = res.config;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") {
+          obj[parts[i]] = {};
+        }
+        obj = obj[parts[i]] as Record<string, unknown>;
+      }
+      obj[parts[parts.length - 1]] = value;
+
+      const raw = JSON.stringify(res.config, null, 2) + "\n";
+      await client.call("config.set", { raw, baseHash: res.hash }, 30_000);
       return true;
     } catch (err) {
       console.warn("[gatewayStore] setConfig failed:", err);
@@ -442,17 +463,13 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   // ── applyConfig ────────────────────────────────────
+  // Now a no-op. Config changes are saved via config.set and take effect
+  // on Gateway restart (use Tauri hidden-shell restart to avoid CMD popup).
 
   applyConfig: async (): Promise<boolean> => {
-    if (!client || client.status !== "connected") return false;
-
-    try {
-      await client.call("config.apply", {});
-      return true;
-    } catch (err) {
-      console.warn("[gatewayStore] applyConfig failed:", err);
-      return false;
-    }
+    // No-op: config.set already saved the file.
+    // Gateway will pick up changes on restart.
+    return true;
   },
 
   // ── fetchModels ────────────────────────────────────
