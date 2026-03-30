@@ -369,6 +369,8 @@ const ProvidersTab: React.FC = () => {
   const [envKeys, setEnvKeys] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [needsRestart, setNeedsRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // Add form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -405,6 +407,33 @@ const ProvidersTab: React.FC = () => {
     setTimeout(() => setActionMsg(null), 4000);
   }, []);
 
+  // ── Silent Restart (via Tauri hidden shell) ───────
+  const connect = useGatewayStore((s) => s.connect);
+  const disconnect = useGatewayStore((s) => s.disconnect);
+
+  const handleRestart = useCallback(async () => {
+    setRestarting(true);
+    showMsg("🔄 Restarting Gateway...");
+    disconnect();
+    try {
+      await restartOpenClaw();
+      // Wait for Gateway to come back up, then reconnect
+      setTimeout(async () => {
+        try {
+          const url = await getGatewayUrl();
+          const { gatewayToken, deviceToken } = await getGatewayToken();
+          await connect(url, gatewayToken, deviceToken);
+          setNeedsRestart(false);
+          showMsg("✅ Gateway restarted");
+        } catch { /* ignore, auto-reconnect will handle */ }
+        setRestarting(false);
+      }, 4000);
+    } catch (err) {
+      showMsg(`❌ Restart failed: ${err}`);
+      setRestarting(false);
+    }
+  }, [connect, disconnect, showMsg]);
+
   // ── Add Provider ──────────────────────────────────
   const handleAddProvider = useCallback(async () => {
     if (!formAlias.trim()) { showMsg("❌ Alias is required"); return; }
@@ -419,7 +448,8 @@ const ProvidersTab: React.FC = () => {
     };
     const ok = await addProviderFn(formAlias.trim(), provider);
     if (ok) {
-      showMsg("✅ Provider added");
+      showMsg("✅ Provider added — restart to apply");
+      setNeedsRestart(true);
       setShowAddForm(false);
       setFormAlias("");
       setFormBaseUrl("");
@@ -437,7 +467,8 @@ const ProvidersTab: React.FC = () => {
   const handleRemoveProvider = useCallback(async (alias: string) => {
     const ok = await removeProviderFn(alias);
     if (ok) {
-      showMsg(`✅ Removed "${alias}"`);
+      showMsg(`✅ Removed "${alias}" — restart to apply`);
+      setNeedsRestart(true);
       await loadProviders();
     } else {
       showMsg(`❌ Failed to remove "${alias}"`);
@@ -449,7 +480,8 @@ const ProvidersTab: React.FC = () => {
     if (!editApiKeyValue.trim()) { showMsg("❌ API Key is required"); return; }
     const ok = await updateProviderApiKeyFn(alias, editApiKeyValue.trim());
     if (ok) {
-      showMsg(`✅ API Key updated for "${alias}"`);
+      showMsg(`✅ API Key updated for "${alias}" — restart to apply`);
+      setNeedsRestart(true);
       setEditingAlias(null);
       setEditApiKeyValue("");
       await loadProviders();
@@ -477,6 +509,26 @@ const ProvidersTab: React.FC = () => {
 
   return (
     <>
+      {/* Restart banner */}
+      {needsRestart && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "8px 12px", marginBottom: 12,
+          background: "rgba(255,204,68,0.1)",
+          border: `2px solid ${COLORS.warning}`,
+          fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.warning,
+        }}>
+          <span>⚠️ Config saved — restart Gateway to apply</span>
+          <button
+            onClick={handleRestart}
+            disabled={restarting}
+            style={{ ...pixelButton, fontSize: "11px", padding: "5px 12px", background: COLORS.warning, color: COLORS.bg }}
+          >
+            {restarting ? "Restarting..." : "🔄 Restart"}
+          </button>
+        </div>
+      )}
+
       {actionMsg && (
         <div style={{
           fontFamily: PIXEL_FONT, fontSize: "12px",

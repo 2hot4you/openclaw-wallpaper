@@ -488,12 +488,15 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   // ── applyConfigRaw ─────────────────────────────────
+  // Uses config.set (save only, no process restart) to avoid CMD window
+  // popups on Windows. The Gateway picks up config changes on next
+  // request or can be restarted manually via the hidden-shell restart.
 
   applyConfigRaw: async (raw: string, baseHash: string): Promise<boolean> => {
     if (!client || client.status !== "connected") return false;
 
     try {
-      await client.call("config.apply", { raw, baseHash }, 30_000);
+      await client.call("config.set", { raw, baseHash }, 30_000);
       return true;
     } catch (err) {
       console.warn("[gatewayStore] applyConfigRaw failed:", err);
