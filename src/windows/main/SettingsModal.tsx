@@ -167,8 +167,8 @@ const GatewayTab: React.FC = () => {
       <SectionTitle>Actions</SectionTitle>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <ActionButton label="▶️ Start" onClick={() => doAction("Start", startOpenClaw)} />
-        <ActionButton label="⏹️ Stop" onClick={() => doAction("Stop", async () => { disconnect(); await stopOpenClaw(); })} />
-        <ActionButton label="🔄 Restart" onClick={() => doAction("Restart", async () => { disconnect(); await restartOpenClaw(); })} />
+        <ActionButton label="⏹️ Stop" onClick={() => doAction("Stop", async () => { useAppStore.getState().setStopPending(true); disconnect(); await stopOpenClaw(); setTimeout(() => useAppStore.getState().setStopPending(false), 15000); })} />
+        <ActionButton label="🔄 Restart" onClick={() => doAction("Restart", async () => { useAppStore.getState().setStopPending(true); disconnect(); await restartOpenClaw(); setTimeout(() => useAppStore.getState().setStopPending(false), 15000); })} />
         <ActionButton label="🩺 Health" onClick={loadHealth} />
       </div>
 

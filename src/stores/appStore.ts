@@ -33,6 +33,10 @@ interface AppState {
   /** Whether the settings modal is open */
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+
+  /** Gateway stop/restart in progress — suppress reconnection */
+  stopPending: boolean;
+  setStopPending: (pending: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -59,4 +63,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+
+  stopPending: false,
+  setStopPending: (pending) => set({ stopPending: pending }),
 }));

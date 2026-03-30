@@ -57,9 +57,6 @@ export const MainWindow: React.FC = () => {
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const setWallpaperSupported = useAppStore((s) => s.setWallpaperSupported);
 
-  // Flag to suppress session refresh during stop/restart
-  const stopPendingRef = useRef(false);
-
   // Track connection status for scene sync
   const connectionStatusRef = useRef<ConnectionStatus>(connectionStatus);
   connectionStatusRef.current = connectionStatus;
@@ -179,7 +176,7 @@ export const MainWindow: React.FC = () => {
     connectToGateway().catch(() => {});
 
     statusCheckTimer = setInterval(async () => {
-      if (cancelled) return;
+      if (cancelled || useAppStore.getState().stopPending) return;
       if (connectionStatusRef.current === "disconnected") {
         try {
           const online = await checkOpenClawStatus();
@@ -215,6 +212,7 @@ export const MainWindow: React.FC = () => {
         const { listen } = await import("@tauri-apps/api/event");
 
         const u1 = await listen("tray-refresh-status", async () => {
+          if (useAppStore.getState().stopPending) return;
           try {
             const online = await checkOpenClawStatus();
             if (online && connectionStatusRef.current === "disconnected") {
@@ -247,12 +245,12 @@ export const MainWindow: React.FC = () => {
 
         const u3 = await listen("tray-stop-openclaw", async () => {
           try {
-            stopPendingRef.current = true;
+            useAppStore.getState().setStopPending(true);
             // Disconnect first to stop receiving new session data
             disconnect();
             await stopOpenClaw();
             // Keep suppressing refresh for 10s to let Gateway fully stop
-            setTimeout(() => { stopPendingRef.current = false; }, 10000);
+            setTimeout(() => { useAppStore.getState().setStopPending(false); }, 10000);
           } catch { /* Ignore */ }
         });
         unlisteners.push(u3);
@@ -320,7 +318,7 @@ export const MainWindow: React.FC = () => {
   useEffect(() => {
     if (connectionStatus !== "connected") return;
     const timer = setInterval(() => {
-      if (!stopPendingRef.current) {
+      if (!useAppStore.getState().stopPending) {
         refreshSessions();
       }
     }, 3000);
