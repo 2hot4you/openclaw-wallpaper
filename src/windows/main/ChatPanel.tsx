@@ -8,7 +8,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Markdown from "react-markdown";
 import { useAppStore } from "../../stores/appStore";
-import { useGatewayStore, type ChatMessage } from "../../stores/gatewayStore";
+import {
+  useGatewayStore,
+  type ChatMessage,
+  type ProviderDef,
+} from "../../stores/gatewayStore";
 import { PIXEL_FONT, COLORS, pixelButton, pixelInput } from "../../styles/pixel-theme";
 
 const PANEL_WIDTH = 360;
@@ -35,6 +39,8 @@ export const ChatPanel: React.FC = () => {
   const fetchChatHistory = useGatewayStore((s) => s.fetchChatHistory);
   const sendMessage = useGatewayStore((s) => s.sendMessage);
   const connectionStatus = useGatewayStore((s) => s.connectionStatus);
+  const fetchConfigFull = useGatewayStore((s) => s.fetchConfigFull);
+  const setDefaultModelFn = useGatewayStore((s) => s.setDefaultModel);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
@@ -43,10 +49,56 @@ export const ChatPanel: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Model switcher state
+  const [currentModel, setCurrentModel] = useState("");
+  const [allModels, setAllModels] = useState<Array<{ id: string; name: string; provider: string }>>([]);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [switchingModel, setSwitchingModel] = useState(false);
+
   // Get session info
   const session = chatSessionKey ? sessions.find((s) => s.key === chatSessionKey) : null;
   const agent = session?.agentId ? agents.find((a) => a.agentId === session.agentId) : null;
   const displayName = session?.label ?? agent?.name ?? chatSessionKey?.split(":").pop() ?? "Agent";
+
+  // Load available models from config
+  useEffect(() => {
+    if (connectionStatus !== "connected" || !chatPanelOpen) return;
+
+    fetchConfigFull().then((full) => {
+      if (!full) return;
+      // Get default model
+      const agents = full.config.agents as Record<string, unknown> | undefined;
+      const defaults = agents?.defaults as Record<string, unknown> | undefined;
+      const model = defaults?.model as Record<string, unknown> | undefined;
+      setCurrentModel((model?.primary as string) ?? "");
+
+      // Collect all models from all providers
+      const models = full.config.models as Record<string, unknown> | undefined;
+      const providers = (models?.providers ?? {}) as Record<string, ProviderDef>;
+      const collected: Array<{ id: string; name: string; provider: string }> = [];
+      for (const [alias, prov] of Object.entries(providers)) {
+        for (const m of prov.models ?? []) {
+          collected.push({
+            id: `${alias}/${m.id}`,
+            name: m.name || m.id,
+            provider: alias,
+          });
+        }
+      }
+      setAllModels(collected);
+    });
+  }, [connectionStatus, chatPanelOpen, fetchConfigFull]);
+
+  // Handle model switch
+  const handleSwitchModel = useCallback(async (modelId: string) => {
+    setSwitchingModel(true);
+    const ok = await setDefaultModelFn(modelId);
+    if (ok) {
+      setCurrentModel(modelId);
+    }
+    setSwitchingModel(false);
+    setShowModelPicker(false);
+  }, [setDefaultModelFn]);
 
   // Load chat history when panel opens or session changes
   useEffect(() => {
@@ -200,10 +252,79 @@ export const ChatPanel: React.FC = () => {
         </button>
       </div>
 
+      {/* Model Selector Bar */}
+      {allModels.length > 0 && (
+        <div style={{
+          padding: "6px 10px",
+          borderBottom: `1px solid ${COLORS.borderDim}`,
+          background: COLORS.bgLight,
+          position: "relative",
+        }}>
+          <button
+            onClick={() => setShowModelPicker(!showModelPicker)}
+            style={{
+              fontFamily: PIXEL_FONT, fontSize: "10px",
+              color: COLORS.accent, background: "transparent",
+              border: `1px solid ${COLORS.inputBorder}`,
+              padding: "4px 8px", cursor: "pointer",
+              width: "100%", textAlign: "left",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}
+          >
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              🧠 {currentModel || "No model"}
+            </span>
+            <span style={{ fontSize: "8px", marginLeft: 6 }}>{showModelPicker ? "▲" : "▼"}</span>
+          </button>
+
+          {/* Dropdown */}
+          {showModelPicker && (
+            <div style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              zIndex: 110,
+              background: COLORS.bg,
+              border: `2px solid ${COLORS.borderDim}`,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+              maxHeight: 200,
+              overflowY: "auto",
+            }}>
+              {allModels.map((m) => {
+                const isActive = m.id === currentModel;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => !isActive && handleSwitchModel(m.id)}
+                    disabled={switchingModel}
+                    style={{
+                      fontFamily: PIXEL_FONT, fontSize: "10px",
+                      color: isActive ? COLORS.success : COLORS.text,
+                      background: isActive ? "rgba(68,255,136,0.1)" : "transparent",
+                      border: "none",
+                      borderBottom: `1px solid ${COLORS.inputBorder}`,
+                      padding: "8px 10px", cursor: isActive ? "default" : "pointer",
+                      width: "100%", textAlign: "left",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>{m.name}</span>
+                    <span style={{ fontSize: "8px", color: COLORS.textDim }}>{m.provider}</span>
+                    {isActive && <span style={{ fontSize: "9px" }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onClick={() => showModelPicker && setShowModelPicker(false)}
         style={{
           flex: 1,
           overflowY: "auto",
