@@ -89,16 +89,20 @@ export const ChatPanel: React.FC = () => {
     });
   }, [connectionStatus, chatPanelOpen, fetchConfigFull]);
 
+  const refreshSessions = useGatewayStore((s) => s.refreshSessions);
+
   // Handle model switch
   const handleSwitchModel = useCallback(async (modelId: string) => {
     setSwitchingModel(true);
     const ok = await setDefaultModelFn(modelId);
     if (ok) {
       setCurrentModel(modelId);
+      // Refresh sessions so character bubbles show the updated model
+      await refreshSessions();
     }
     setSwitchingModel(false);
     setShowModelPicker(false);
-  }, [setDefaultModelFn]);
+  }, [setDefaultModelFn, refreshSessions]);
 
   // Load chat history when panel opens or session changes
   useEffect(() => {

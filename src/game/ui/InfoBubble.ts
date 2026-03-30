@@ -18,11 +18,11 @@ import type { SessionData, AgentData } from "../../gateway/types";
 
 // ── Layout ──────────────────────────────────────────
 
-const BUBBLE_WIDTH = 180;
-const BUBBLE_PADDING = 8;
-const LINE_HEIGHT = 12;
-const FONT_SIZE = "7px";
-const TITLE_FONT_SIZE = "8px";
+const BUBBLE_WIDTH = 220;
+const BUBBLE_PADDING = 10;
+const LINE_HEIGHT = 16;
+const FONT_SIZE = "10px";
+const TITLE_FONT_SIZE = "11px";
 const BUBBLE_BG = 0xfef9e7;
 const BUBBLE_BORDER = 0x222222;
 const BUBBLE_BORDER_WIDTH = 2;
