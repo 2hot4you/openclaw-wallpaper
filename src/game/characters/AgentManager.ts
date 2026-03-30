@@ -181,45 +181,8 @@ export class AgentManager {
     // Handle disappeared sessions → despawn via reverse route
     for (const [key, agent] of this.agents) {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
-        const seatIdx = this.seatAssignments.get(key);
-
-        if (this.isMainAgent(key)) {
-          this.releaseAgent(key);
-          const route = agent.status === "working" ? this.bossWorkRoute : this.bossRestRoute;
-          const target = agent.status === "working" ? this.bossWorkSeat : this.bossRestSeat;
-          const exitPath = this.resolveRoute([...route].reverse());
-
-          if (agent.isMoving && target) {
-            // Still walking to seat — let it finish, then walk back
-            agent.onArrival(() => {
-              agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-            });
-          } else {
-            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-          }
-        } else if (seatIdx !== undefined && seatIdx < this.subagentSeats.length) {
-          const seat = this.subagentSeats[seatIdx];
-          const routeNames = this.seatRoutes.get(seat.name);
-          this.releaseAgent(key);
-          if (routeNames) {
-            const exitPath = this.resolveRoute([...routeNames].reverse());
-
-            if (agent.isMoving) {
-              // Still walking to seat — let it finish, then walk reverse
-              agent.onArrival(() => {
-                agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-              });
-            } else {
-              // Already seated — walk reverse immediately
-              agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
-            }
-          } else {
-            agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
-          }
-        } else {
-          this.releaseAgent(key);
-          agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
-        }
+        this.releaseAgent(key);
+        agent.despawn();
       }
     }
 
