@@ -14,6 +14,7 @@ import {
 } from "../../utils/tauri-ipc";
 import { ChatPanel } from "./ChatPanel";
 import { SettingsModal } from "./SettingsModal";
+import { PixelWindowControls } from "./PixelWindowControls";
 import type { ConnectionStatus } from "../../gateway/types";
 
 // Lazy-load GameManager to isolate Phaser init
@@ -381,6 +382,9 @@ export const MainWindow: React.FC = () => {
 
       {/* Settings Modal — overlay */}
       {gameReady && <SettingsModal />}
+
+      {/* Custom window controls (title bar + minimize/maximize/close) */}
+      <PixelWindowControls />
     </div>
   );
 };
