@@ -183,23 +183,36 @@ export class AgentManager {
       if (!sessionKeys.has(key) && !agent.isDespawned && !agent.isDespawning) {
         const seatIdx = this.seatAssignments.get(key);
 
-        // Stop any current movement first
-        agent.stopCurrentMovement();
-
         if (this.isMainAgent(key)) {
           this.releaseAgent(key);
           const route = agent.status === "working" ? this.bossWorkRoute : this.bossRestRoute;
+          const target = agent.status === "working" ? this.bossWorkSeat : this.bossRestSeat;
           const exitPath = this.resolveRoute([...route].reverse());
-          agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+
+          if (agent.isMoving && target) {
+            // Still walking to seat — let it finish, then walk back
+            agent.onArrival(() => {
+              agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+            });
+          } else {
+            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+          }
         } else if (seatIdx !== undefined && seatIdx < this.subagentSeats.length) {
           const seat = this.subagentSeats[seatIdx];
           const routeNames = this.seatRoutes.get(seat.name);
           this.releaseAgent(key);
           if (routeNames) {
-            // Teleport to seat position first, then walk reverse route
-            agent.setPosition(seat.x, seat.y + SEAT_Y_OFFSET);
             const exitPath = this.resolveRoute([...routeNames].reverse());
-            agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+
+            if (agent.isMoving) {
+              // Still walking to seat — let it finish, then walk reverse
+              agent.onArrival(() => {
+                agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+              });
+            } else {
+              // Already seated — walk reverse immediately
+              agent.walkPathThenDespawn(exitPath, this.doorPosition.x, this.doorPosition.y);
+            }
           } else {
             agent.walkThenDespawn(this.doorPosition.x, this.doorPosition.y);
           }

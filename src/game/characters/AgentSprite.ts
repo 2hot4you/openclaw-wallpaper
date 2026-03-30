@@ -501,6 +501,25 @@ export class AgentSprite {
   }
 
   /**
+   * Set a callback to fire when the current movement completes.
+   * If not moving, fires immediately.
+   */
+  onArrival(callback: () => void): void {
+    if (!this._isMoving) {
+      callback();
+      return;
+    }
+    // Patch the current tween's onComplete
+    if (this.moveTimeline) {
+      this.moveTimeline.once('complete', () => {
+        callback();
+      });
+    } else {
+      callback();
+    }
+  }
+
+  /**
    * Teleport to a position instantly (for despawn preparation).
    */
   setPosition(x: number, y: number): void {
