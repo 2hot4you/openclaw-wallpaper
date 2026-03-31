@@ -71,6 +71,16 @@ export interface ConfigFull {
   hash: string;
 }
 
+/** Channel runtime status from channels.status RPC */
+export interface ChannelStatus {
+  configured: boolean;
+  running: boolean;
+  lastError: string | null;
+}
+
+/** Map of channel id → runtime status */
+export type ChannelStatusMap = Record<string, ChannelStatus>;
+
 // ─── Singleton client instance ───────────────────────────────
 
 let client: GatewayClient | null = null;
@@ -151,6 +161,18 @@ interface GatewayState {
 
   /** Remove a single model from a provider */
   removeModelFromProvider: (alias: string, modelId: string) => Promise<boolean>;
+
+  /** Fetch channel runtime statuses from channels.status RPC */
+  fetchChannelStatus: () => Promise<ChannelStatusMap>;
+
+  /** Set channel config (read → modify channels.<channel> → config.set) */
+  setChannelConfig: (channel: string, config: Record<string, unknown>) => Promise<boolean>;
+
+  /** Toggle a channel enabled/disabled */
+  toggleChannel: (channel: string, enabled: boolean) => Promise<boolean>;
+
+  /** Logout a channel (calls channels.logout RPC) */
+  logoutChannel: (channel: string) => Promise<boolean>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -654,6 +676,73 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       return await store.applyConfigRaw(raw, full.hash);
     } catch (err) {
       console.warn("[gatewayStore] removeModelFromProvider failed:", err);
+      return false;
+    }
+  },
+
+  // ── fetchChannelStatus ─────────────────────────────
+
+  fetchChannelStatus: async (): Promise<ChannelStatusMap> => {
+    if (!client || client.status !== "connected") return {};
+
+    try {
+      const raw = await client.call<
+        Record<string, ChannelStatus> | { channels?: Record<string, ChannelStatus> }
+      >("channels.status", {}, 15_000);
+      // Response may be { channels: { ... } } or directly { telegram: {...}, ... }
+      if (raw && typeof raw === "object") {
+        if ("channels" in raw && raw.channels && typeof raw.channels === "object") {
+          return raw.channels as ChannelStatusMap;
+        }
+        // Assume it's a flat map
+        return raw as ChannelStatusMap;
+      }
+      return {};
+    } catch (err) {
+      console.warn("[gatewayStore] fetchChannelStatus failed:", err);
+      return {};
+    }
+  },
+
+  // ── setChannelConfig ───────────────────────────────
+
+  setChannelConfig: async (channel: string, channelConfig: Record<string, unknown>): Promise<boolean> => {
+    const store = get();
+    const full = await store.fetchConfigFull();
+    if (!full) return false;
+
+    try {
+      const config = full.config;
+      if (!config.channels) config.channels = {};
+      const channels = config.channels as Record<string, unknown>;
+      const existing = (channels[channel] ?? {}) as Record<string, unknown>;
+      channels[channel] = { ...existing, ...channelConfig };
+
+      const raw = JSON.stringify(config, null, 2) + "\n";
+      return await store.applyConfigRaw(raw, full.hash);
+    } catch (err) {
+      console.warn("[gatewayStore] setChannelConfig failed:", err);
+      return false;
+    }
+  },
+
+  // ── toggleChannel ──────────────────────────────────
+
+  toggleChannel: async (channel: string, enabled: boolean): Promise<boolean> => {
+    const store = get();
+    return store.setChannelConfig(channel, { enabled });
+  },
+
+  // ── logoutChannel ──────────────────────────────────
+
+  logoutChannel: async (channel: string): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("channels.logout", { channel }, 15_000);
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] logoutChannel failed:", err);
       return false;
     }
   },

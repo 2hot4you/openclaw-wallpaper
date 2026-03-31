@@ -16,6 +16,7 @@ import {
   type ModelInfo,
   type ProviderDef,
   type ProviderModelDef,
+  type ChannelStatusMap,
 } from "../../stores/gatewayStore";
 import { PIXEL_FONT, COLORS, pixelBorder, pixelButton, pixelInput } from "../../styles/pixel-theme";
 import {
@@ -26,7 +27,7 @@ import {
   restartOpenClaw,
 } from "../../utils/tauri-ipc";
 
-type Tab = "gateway" | "models" | "providers" | "config";
+type Tab = "gateway" | "models" | "providers" | "channels" | "config";
 
 export const SettingsModal: React.FC = () => {
   const settingsOpen = useAppStore((s) => s.settingsOpen);
@@ -89,6 +90,7 @@ export const SettingsModal: React.FC = () => {
             { id: "gateway", label: "🔌 Gateway" },
             { id: "models", label: "🧠 Models" },
             { id: "providers", label: "🔑 Providers" },
+            { id: "channels", label: "📡 Channels" },
             { id: "config", label: "⚙️ Config" },
           ] as const).map((tab) => (
             <button
@@ -110,6 +112,7 @@ export const SettingsModal: React.FC = () => {
           {activeTab === "gateway" && <GatewayTab />}
           {activeTab === "models" && <ModelsTab />}
           {activeTab === "providers" && <ProvidersTab />}
+          {activeTab === "channels" && <ChannelsTab />}
           {activeTab === "config" && <ConfigTab />}
         </div>
       </div>
@@ -986,6 +989,551 @@ const ProvidersTab: React.FC = () => {
             }}>
               {configured ? `✅ ${maskApiKey(value)}` : "⚪ Not set"}
             </span>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+// ═══════════════════════════════════════════════════════
+//  Channels Tab
+// ═══════════════════════════════════════════════════════
+
+/** Channel field definition */
+interface ChannelField {
+  key: string;
+  label: string;
+  type: "text" | "password" | "number" | "select";
+  required?: boolean;
+  placeholder?: string;
+  default?: string;
+  options?: string[];
+}
+
+/** Channel definition */
+interface ChannelDef {
+  id: string;
+  name: string;
+  icon: string;
+  fields: ChannelField[];
+  plugin?: boolean;
+  note?: string;
+}
+
+const CHANNELS: ChannelDef[] = [
+  // Built-in — Primary
+  { id: "telegram", name: "Telegram", icon: "✈️", fields: [
+    { key: "botToken", label: "Bot Token", type: "password", required: true, placeholder: "123456:ABC-DEF..." },
+    { key: "dmPolicy", label: "DM Policy", type: "select", options: ["pairing", "open", "allowlist"], default: "pairing" },
+  ]},
+  { id: "discord", name: "Discord", icon: "🎮", fields: [
+    { key: "botToken", label: "Bot Token", type: "password", required: true },
+    { key: "guildId", label: "Guild ID", type: "text" },
+  ]},
+  { id: "whatsapp", name: "WhatsApp", icon: "💬", fields: [], note: "Uses QR pairing. Start gateway, then scan QR code." },
+  { id: "signal", name: "Signal", icon: "🔒", fields: [
+    { key: "account", label: "Phone Number", type: "text", required: true, placeholder: "+15551234567" },
+    { key: "cliPath", label: "signal-cli Path", type: "text", default: "signal-cli" },
+    { key: "dmPolicy", label: "DM Policy", type: "select", options: ["pairing", "open", "allowlist"], default: "pairing" },
+  ]},
+  { id: "slack", name: "Slack", icon: "💼", fields: [
+    { key: "appToken", label: "App Token", type: "password", required: true, placeholder: "xapp-..." },
+    { key: "botToken", label: "Bot Token", type: "password", required: true, placeholder: "xoxb-..." },
+  ]},
+  // Built-in — Other
+  { id: "irc", name: "IRC", icon: "📟", fields: [
+    { key: "server", label: "Server", type: "text", required: true, placeholder: "irc.example.com" },
+    { key: "port", label: "Port", type: "number", default: "6667" },
+    { key: "nick", label: "Nickname", type: "text", required: true },
+    { key: "password", label: "Password", type: "password" },
+  ]},
+  { id: "bluebubbles", name: "BlueBubbles (iMessage)", icon: "🍎", fields: [
+    { key: "serverUrl", label: "Server URL", type: "text", required: true, placeholder: "http://192.168.1.x:1234" },
+    { key: "password", label: "Password", type: "password", required: true },
+  ]},
+  { id: "imessage", name: "iMessage (Legacy)", icon: "💬", fields: [], note: "macOS only. Legacy integration." },
+  // Plugins
+  { id: "feishu", name: "Feishu/Lark", icon: "🐦", plugin: true, fields: [
+    { key: "appId", label: "App ID", type: "text", required: true },
+    { key: "appSecret", label: "App Secret", type: "password", required: true },
+  ]},
+  { id: "line", name: "LINE", icon: "🟢", plugin: true, fields: [
+    { key: "channelAccessToken", label: "Channel Access Token", type: "password", required: true },
+    { key: "channelSecret", label: "Channel Secret", type: "password", required: true },
+  ]},
+  { id: "googlechat", name: "Google Chat", icon: "📨", plugin: true, fields: [
+    { key: "webhookUrl", label: "Webhook URL", type: "text" },
+  ]},
+  { id: "msteams", name: "Microsoft Teams", icon: "🟦", plugin: true, fields: [
+    { key: "appId", label: "App ID", type: "text", required: true },
+    { key: "appPassword", label: "App Password", type: "password", required: true },
+  ]},
+  { id: "matrix", name: "Matrix", icon: "🔗", plugin: true, fields: [
+    { key: "homeserver", label: "Homeserver URL", type: "text", required: true },
+    { key: "accessToken", label: "Access Token", type: "password", required: true },
+  ]},
+  { id: "mattermost", name: "Mattermost", icon: "🔵", plugin: true, fields: [
+    { key: "url", label: "Server URL", type: "text", required: true },
+    { key: "botToken", label: "Bot Token", type: "password", required: true },
+  ]},
+  { id: "nextcloudtalk", name: "Nextcloud Talk", icon: "☁️", plugin: true, fields: [
+    { key: "url", label: "Server URL", type: "text", required: true },
+    { key: "username", label: "Username", type: "text", required: true },
+    { key: "password", label: "Password", type: "password", required: true },
+  ]},
+  { id: "twitch", name: "Twitch", icon: "🟣", plugin: true, fields: [
+    { key: "username", label: "Username", type: "text", required: true },
+    { key: "oauthToken", label: "OAuth Token", type: "password", required: true },
+    { key: "channels", label: "Channels (comma-separated)", type: "text" },
+  ]},
+  { id: "nostr", name: "Nostr", icon: "🌐", plugin: true, fields: [
+    { key: "privateKey", label: "Private Key", type: "password", required: true },
+  ]},
+  { id: "synologychat", name: "Synology Chat", icon: "🖥️", plugin: true, fields: [] },
+  { id: "tlon", name: "Tlon (Urbit)", icon: "⛵", plugin: true, fields: [] },
+  { id: "zalo", name: "Zalo", icon: "🔷", plugin: true, fields: [
+    { key: "appId", label: "App ID", type: "text", required: true },
+    { key: "secretKey", label: "Secret Key", type: "password", required: true },
+  ]},
+];
+
+/** Mask a secret value: show first 4 + last 4 chars */
+function maskSecret(val: string | undefined | null): string {
+  if (!val || typeof val !== "string") return "—";
+  if (val.length <= 8) return "••••••••";
+  return `${val.slice(0, 4)}${"••••••"}${val.slice(-4)}`;
+}
+
+const ChannelsTab: React.FC = () => {
+  const connectionStatus = useGatewayStore((s) => s.connectionStatus);
+  const fetchConfigFull = useGatewayStore((s) => s.fetchConfigFull);
+  const fetchChannelStatus = useGatewayStore((s) => s.fetchChannelStatus);
+  const setChannelConfig = useGatewayStore((s) => s.setChannelConfig);
+  const toggleChannel = useGatewayStore((s) => s.toggleChannel);
+  const logoutChannel = useGatewayStore((s) => s.logoutChannel);
+  const connect = useGatewayStore((s) => s.connect);
+  const disconnect = useGatewayStore((s) => s.disconnect);
+
+  const [channelConfigs, setChannelConfigs] = useState<Record<string, Record<string, unknown>>>({});
+  const [channelStatuses, setChannelStatuses] = useState<ChannelStatusMap>({});
+  const [loading, setLoading] = useState(true);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [needsRestart, setNeedsRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
+  const [editingChannel, setEditingChannel] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const showMsg = useCallback((msg: string) => {
+    setActionMsg(msg);
+    setTimeout(() => setActionMsg(null), 4000);
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const [full, statuses] = await Promise.all([
+      fetchConfigFull(),
+      fetchChannelStatus(),
+    ]);
+    if (full) {
+      const channels = (full.config.channels ?? {}) as Record<string, Record<string, unknown>>;
+      setChannelConfigs(channels);
+    }
+    setChannelStatuses(statuses);
+    setLoading(false);
+  }, [fetchConfigFull, fetchChannelStatus]);
+
+  useEffect(() => {
+    if (connectionStatus === "connected") loadData();
+  }, [connectionStatus, loadData]);
+
+  // ── Toggle enabled ────────────────────────────────
+  const handleToggle = useCallback(async (channelId: string) => {
+    const current = channelConfigs[channelId];
+    const currentEnabled = !!(current?.enabled);
+    setSaving(true);
+    const ok = await toggleChannel(channelId, !currentEnabled);
+    if (ok) {
+      setChannelConfigs((prev) => ({
+        ...prev,
+        [channelId]: { ...prev[channelId], enabled: !currentEnabled },
+      }));
+      setNeedsRestart(true);
+      showMsg(`✅ ${channelId} ${!currentEnabled ? "enabled" : "disabled"} — restart to apply`);
+    } else {
+      showMsg(`❌ Failed to toggle ${channelId}`);
+    }
+    setSaving(false);
+  }, [channelConfigs, toggleChannel, showMsg]);
+
+  // ── Start editing ─────────────────────────────────
+  const startEdit = useCallback((def: ChannelDef) => {
+    const config = channelConfigs[def.id] ?? {};
+    const form: Record<string, string> = {};
+    for (const field of def.fields) {
+      const val = config[field.key];
+      // Don't pre-fill password fields (show masked instead)
+      if (field.type === "password") {
+        form[field.key] = "";
+      } else {
+        form[field.key] = val != null ? String(val) : (field.default ?? "");
+      }
+    }
+    setEditForm(form);
+    setEditingChannel(def.id);
+    setExpandedChannel(def.id);
+  }, [channelConfigs]);
+
+  // ── Save config ───────────────────────────────────
+  const handleSave = useCallback(async (def: ChannelDef) => {
+    setSaving(true);
+    const patch: Record<string, unknown> = {};
+    for (const field of def.fields) {
+      const val = editForm[field.key];
+      // Only include password fields if user typed something new
+      if (field.type === "password" && !val) continue;
+      if (field.type === "number") {
+        patch[field.key] = val ? parseInt(val, 10) : undefined;
+      } else {
+        patch[field.key] = val || undefined;
+      }
+    }
+    // Preserve enabled state
+    const current = channelConfigs[def.id];
+    if (current?.enabled !== undefined) patch.enabled = current.enabled;
+
+    const ok = await setChannelConfig(def.id, patch);
+    if (ok) {
+      setChannelConfigs((prev) => ({
+        ...prev,
+        [def.id]: { ...prev[def.id], ...patch },
+      }));
+      setNeedsRestart(true);
+      setEditingChannel(null);
+      showMsg(`✅ ${def.name} config saved — restart to apply`);
+    } else {
+      showMsg(`❌ Failed to save ${def.name} config`);
+    }
+    setSaving(false);
+  }, [editForm, channelConfigs, setChannelConfig, showMsg]);
+
+  // ── Logout ────────────────────────────────────────
+  const handleLogout = useCallback(async (channelId: string) => {
+    setSaving(true);
+    const ok = await logoutChannel(channelId);
+    if (ok) {
+      showMsg(`✅ ${channelId} logged out`);
+      // Refresh statuses
+      const statuses = await fetchChannelStatus();
+      setChannelStatuses(statuses);
+    } else {
+      showMsg(`❌ Failed to logout ${channelId}`);
+    }
+    setSaving(false);
+  }, [logoutChannel, fetchChannelStatus, showMsg]);
+
+  // ── Restart ───────────────────────────────────────
+  const handleRestart = useCallback(async () => {
+    setRestarting(true);
+    showMsg("🔄 Restarting Gateway...");
+    disconnect();
+    try {
+      await restartOpenClaw();
+      setTimeout(async () => {
+        try {
+          const url = await getGatewayUrl();
+          const { gatewayToken, deviceToken } = await getGatewayToken();
+          await connect(url, gatewayToken, deviceToken);
+          setNeedsRestart(false);
+          showMsg("✅ Gateway restarted");
+          // Refresh data after reconnect
+          setTimeout(() => loadData(), 1000);
+        } catch { /* auto-reconnect handles it */ }
+        setRestarting(false);
+      }, 4000);
+    } catch (err) {
+      showMsg(`❌ Restart failed: ${err}`);
+      setRestarting(false);
+    }
+  }, [connect, disconnect, showMsg, loadData]);
+
+  /** Get status indicator for a channel */
+  const getStatusIndicator = (channelId: string): { dot: string; label: string; color: string } => {
+    const config = channelConfigs[channelId];
+    const status = channelStatuses[channelId];
+    const enabled = !!(config?.enabled);
+
+    if (!enabled) return { dot: "⚪", label: "Disabled", color: COLORS.textDim };
+    if (status?.running) return { dot: "🟢", label: "Connected", color: COLORS.success };
+    if (status?.configured) return { dot: "🔴", label: "Disconnected", color: COLORS.error };
+    return { dot: "🟡", label: "Not configured", color: COLORS.warning };
+  };
+
+  if (loading) return <Dimmed>Loading channels...</Dimmed>;
+
+  return (
+    <>
+      {/* Restart banner */}
+      {needsRestart && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "8px 12px", marginBottom: 12,
+          background: "rgba(255,204,68,0.1)",
+          border: `2px solid ${COLORS.warning}`,
+          fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.warning,
+        }}>
+          <span>⚠️ Config saved — restart Gateway to apply</span>
+          <button
+            onClick={handleRestart}
+            disabled={restarting}
+            style={{ ...pixelButton, fontSize: "11px", padding: "5px 12px", background: COLORS.warning, color: COLORS.bg }}
+          >
+            {restarting ? "Restarting..." : "🔄 Restart"}
+          </button>
+        </div>
+      )}
+
+      {actionMsg && (
+        <div style={{
+          fontFamily: PIXEL_FONT, fontSize: "12px",
+          color: actionMsg.startsWith("✅") ? COLORS.success : actionMsg.startsWith("🔄") ? COLORS.warning : COLORS.error,
+          marginBottom: 12, padding: "6px 10px",
+          background: "rgba(255,255,255,0.05)",
+          border: `1px solid ${COLORS.inputBorder}`,
+        }}>
+          {actionMsg}
+        </div>
+      )}
+
+      <SectionTitle>Message Channels</SectionTitle>
+
+      {CHANNELS.map((def) => {
+        const config = channelConfigs[def.id] ?? {};
+        const enabled = !!(config.enabled);
+        const isExpanded = expandedChannel === def.id;
+        const isEditing = editingChannel === def.id;
+        const statusInfo = getStatusIndicator(def.id);
+        const hasConfig = def.fields.some((f) => config[f.key] != null && config[f.key] !== "");
+
+        return (
+          <div key={def.id} style={{
+            marginBottom: 8,
+            background: enabled ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.1)",
+            ...pixelBorder(enabled ? COLORS.borderDim : "rgba(83,52,131,0.4)"),
+          }}>
+            {/* Channel header */}
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", cursor: "pointer",
+                userSelect: "none",
+              }}
+              onClick={() => setExpandedChannel(isExpanded ? null : def.id)}
+            >
+              {/* Status dot + icon + name */}
+              <span style={{ fontSize: "14px" }}>{statusInfo.dot}</span>
+              <span style={{ fontSize: "16px" }}>{def.icon}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontFamily: PIXEL_FONT, fontSize: "12px", color: COLORS.textBright }}>
+                  {def.name}
+                </span>
+                {def.plugin && (
+                  <span style={{
+                    fontFamily: PIXEL_FONT, fontSize: "9px",
+                    color: COLORS.bg, background: COLORS.borderDim,
+                    padding: "1px 5px", marginLeft: 8,
+                  }}>
+                    Plugin
+                  </span>
+                )}
+              </div>
+
+              {/* Status label */}
+              <span style={{
+                fontFamily: PIXEL_FONT, fontSize: "10px", color: statusInfo.color,
+              }}>
+                {statusInfo.label}
+              </span>
+
+              {/* Toggle */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleToggle(def.id); }}
+                disabled={saving}
+                style={{
+                  fontFamily: PIXEL_FONT, fontSize: "10px",
+                  padding: "4px 10px",
+                  background: enabled ? COLORS.success : COLORS.inputBorder,
+                  color: enabled ? COLORS.bg : COLORS.textDim,
+                  border: `2px solid ${enabled ? COLORS.success : COLORS.inputBorder}`,
+                  cursor: "pointer",
+                  boxShadow: "1px 1px 0 0 rgba(0,0,0,0.3)",
+                  minWidth: 48,
+                }}
+              >
+                {enabled ? "ON" : "OFF"}
+              </button>
+
+              {/* Expand indicator */}
+              <span style={{
+                fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
+                transition: "transform 0.15s",
+                display: "inline-block",
+                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+              }}>▼</span>
+            </div>
+
+            {/* Expanded content */}
+            {isExpanded && (
+              <div style={{
+                padding: "0 12px 12px 12px",
+                borderTop: `1px solid ${COLORS.inputBorder}`,
+              }}>
+                {/* Note if any */}
+                {def.note && (
+                  <div style={{
+                    fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
+                    padding: "8px 0 4px 0", fontStyle: "italic",
+                  }}>
+                    ℹ️ {def.note}
+                  </div>
+                )}
+
+                {/* Plugin notice */}
+                {def.plugin && (
+                  <div style={{
+                    fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.warning,
+                    padding: "6px 0",
+                  }}>
+                    ⚠️ Plugin required — install via openclaw plugins
+                  </div>
+                )}
+
+                {/* Current config display (when not editing) */}
+                {!isEditing && def.fields.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    {hasConfig ? (
+                      def.fields.map((field) => {
+                        const val = config[field.key];
+                        if (val == null || val === "") return null;
+                        const display = field.type === "password"
+                          ? maskSecret(String(val))
+                          : String(val);
+                        return (
+                          <InfoRow key={field.key} label={field.label} value={display} />
+                        );
+                      })
+                    ) : (
+                      <div style={{
+                        fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.textDim,
+                        padding: "4px 0",
+                      }}>
+                        Not configured
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* No fields — just note */}
+                {!isEditing && def.fields.length === 0 && !def.note && (
+                  <div style={{
+                    fontFamily: PIXEL_FONT, fontSize: "11px", color: COLORS.textDim,
+                    padding: "8px 0",
+                  }}>
+                    No configuration needed
+                  </div>
+                )}
+
+                {/* Edit form */}
+                {isEditing && (
+                  <div style={{ marginTop: 8 }}>
+                    {def.fields.map((field) => {
+                      const currentVal = config[field.key];
+                      const hasSavedVal = currentVal != null && currentVal !== "";
+                      return (
+                        <div key={field.key} style={{ marginBottom: 10 }}>
+                          <div style={{
+                            fontFamily: PIXEL_FONT, fontSize: "10px", color: COLORS.textDim,
+                            marginBottom: 3, display: "flex", alignItems: "center", gap: 4,
+                          }}>
+                            {field.label}
+                            {field.required && <span style={{ color: COLORS.accent }}>*</span>}
+                          </div>
+                          {field.type === "select" ? (
+                            <select
+                              value={editForm[field.key] ?? field.default ?? ""}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                              style={{ ...pixelInput, cursor: "pointer", fontSize: "11px" }}
+                            >
+                              {field.options?.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type={field.type === "password" ? "password" : "text"}
+                              value={editForm[field.key] ?? ""}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                              placeholder={
+                                field.type === "password" && hasSavedVal
+                                  ? `Current: ${maskSecret(String(currentVal))} — leave blank to keep`
+                                  : field.placeholder ?? ""
+                              }
+                              style={{ ...pixelInput, fontSize: "11px" }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{
+                  display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end",
+                  flexWrap: "wrap",
+                }}>
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={() => { setEditingChannel(null); setEditForm({}); }}
+                        style={{ ...pixelButton, fontSize: "10px", padding: "5px 12px", background: COLORS.bgPanel }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleSave(def)}
+                        disabled={saving}
+                        style={{ ...pixelButton, fontSize: "10px", padding: "5px 12px" }}
+                      >
+                        {saving ? "Saving..." : "💾 Save"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {def.fields.length > 0 && (
+                        <button
+                          onClick={() => startEdit(def)}
+                          style={{ ...pixelButton, fontSize: "10px", padding: "5px 12px", background: COLORS.bgPanel }}
+                        >
+                          {hasConfig ? "✏️ Edit" : "⚙️ Configure"}
+                        </button>
+                      )}
+                      {enabled && hasConfig && (
+                        <button
+                          onClick={() => handleLogout(def.id)}
+                          disabled={saving}
+                          style={{ ...pixelButton, fontSize: "10px", padding: "5px 12px", background: COLORS.error }}
+                        >
+                          🚪 Logout
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
