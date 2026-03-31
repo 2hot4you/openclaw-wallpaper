@@ -361,20 +361,24 @@ export const MainWindow: React.FC = () => {
         height: "100vh",
         overflow: "hidden",
         background: "#2a2a3d",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      {/* Phaser canvas container — always full size */}
-      <div
-        ref={containerRef}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
+      {/* Title bar — own space, not overlapping map */}
+      <PixelWindowControls />
+
+      {/* Main content area — fills remaining space below title bar */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex" }}>
+        {/* Phaser canvas container */}
+        <div
+          ref={containerRef}
+          style={{
+            flex: 1,
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
         {/* Loading overlay */}
         {!gameReady && (
           <div
@@ -406,12 +410,10 @@ export const MainWindow: React.FC = () => {
 
       {/* Chat Panel — right sidebar */}
       {gameReady && chatPanelOpen && <ChatPanel />}
+      </div>
 
       {/* Settings Modal — overlay */}
       {gameReady && <SettingsModal />}
-
-      {/* Custom window controls (title bar + minimize/maximize/close) */}
-      <PixelWindowControls />
     </div>
   );
 };

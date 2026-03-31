@@ -138,7 +138,6 @@ const PixelTitleButton: React.FC<{
 
 export const PixelWindowControls: React.FC = () => {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [barHovered, setBarHovered] = useState(false);
 
   const handleMinimize = useCallback(async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -169,21 +168,16 @@ export const PixelWindowControls: React.FC = () => {
       {/* Title bar — semi-transparent, fully visible on hover */}
       <div
         data-tauri-drag-region
-        onMouseEnter={() => setBarHovered(true)}
-        onMouseLeave={() => setBarHovered(false)}
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
+          width: "100%",
           height: 30,
+          flexShrink: 0,
           zIndex: 200,
           display: "flex",
           alignItems: "center",
           justifyContent: "flex-end",
           padding: "0 0 0 10px",
-          background: barHovered ? "rgba(10,10,20,0.85)" : "rgba(10,10,20,0.15)",
-          transition: "background 0.2s, opacity 0.2s",
+          background: "rgba(10,10,20,0.9)",
           pointerEvents: "auto",
         }}
       >
@@ -194,8 +188,7 @@ export const PixelWindowControls: React.FC = () => {
             flex: 1,
             fontFamily: PIXEL_FONT,
             fontSize: 9,
-            color: barHovered ? "rgba(255,255,255,0.6)" : "transparent",
-            transition: "color 0.2s",
+            color: "rgba(255,255,255,0.6)",
             pointerEvents: "none",
           }}
         >
@@ -205,8 +198,6 @@ export const PixelWindowControls: React.FC = () => {
         {/* Controls — subtle when idle, clear on hover */}
         <div style={{
           display: "flex",
-          opacity: barHovered ? 1 : 0.3,
-          transition: "opacity 0.2s",
         }}>
           <PixelTitleButton icon="─" color="#6c8" hoverColor="#8ea" onClick={handleMinimize} title="最小化" />
           <PixelTitleButton icon="□" color="#68c" hoverColor="#8ae" onClick={handleMaximize} title="全屏/还原" />
