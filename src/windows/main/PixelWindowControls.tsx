@@ -138,6 +138,7 @@ const PixelTitleButton: React.FC<{
 
 export const PixelWindowControls: React.FC = () => {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   const handleMinimize = useCallback(async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -165,44 +166,37 @@ export const PixelWindowControls: React.FC = () => {
 
   return (
     <>
-      {/* Title bar — semi-transparent, fully visible on hover */}
+      {/* Drag region — invisible area at top for window dragging */}
       <div
         data-tauri-drag-region
         style={{
-          width: "100%",
-          height: 30,
-          flexShrink: 0,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 60,
+          height: 32,
+          zIndex: 199,
+        }}
+      />
+
+      {/* Floating controls — top-right corner, semi-transparent */}
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          position: "absolute",
+          top: 4,
+          right: 4,
           zIndex: 200,
           display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          padding: "0 0 0 10px",
-          background: "rgba(10,10,20,0.9)",
-          pointerEvents: "auto",
+          gap: 2,
+          opacity: hovered ? 1 : 0.4,
+          transition: "opacity 0.2s",
         }}
       >
-        {/* Title — only visible on hover */}
-        <div
-          data-tauri-drag-region
-          style={{
-            flex: 1,
-            fontFamily: PIXEL_FONT,
-            fontSize: 9,
-            color: "rgba(255,255,255,0.6)",
-            pointerEvents: "none",
-          }}
-        >
-          🦞 OpenClaw Wallpaper
-        </div>
-
-        {/* Controls — subtle when idle, clear on hover */}
-        <div style={{
-          display: "flex",
-        }}>
-          <PixelTitleButton icon="─" color="#6c8" hoverColor="#8ea" onClick={handleMinimize} title="最小化" />
-          <PixelTitleButton icon="□" color="#68c" hoverColor="#8ae" onClick={handleMaximize} title="全屏/还原" />
-          <PixelTitleButton icon="✕" color="#c44" hoverColor="#f66" onClick={() => setShowConfirm(true)} title="关闭" />
-        </div>
+        <PixelTitleButton icon="─" color="#6c8" hoverColor="#8ea" onClick={handleMinimize} title="最小化" />
+        <PixelTitleButton icon="□" color="#68c" hoverColor="#8ae" onClick={handleMaximize} title="全屏/还原" />
+        <PixelTitleButton icon="✕" color="#c44" hoverColor="#f66" onClick={() => setShowConfirm(true)} title="关闭" />
       </div>
 
       {/* Confirm dialog */}
