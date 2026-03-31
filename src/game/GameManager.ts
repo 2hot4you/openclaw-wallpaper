@@ -17,7 +17,7 @@
 import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { OfficeScene } from "./scenes/OfficeScene";
-import { AgentManager } from "./characters/AgentManager";
+import { AgentManager, type AgentActionHandler } from "./characters/AgentManager";
 import { StatusBar } from "./ui/StatusBar";
 import { POIInteraction, type POIClickHandler } from "./ui/POIInteraction";
 import type { ConnectionStatus } from "../gateway/types";
@@ -34,6 +34,7 @@ export class GameManager {
   // Deferred handlers (set before scene is ready)
   private _pendingClickHandler: CharacterClickHandler | null = null;
   private _pendingPOIHandler: POIClickHandler | null = null;
+  private _pendingActionHandler: AgentActionHandler | null = null;
   private _pendingStatusText: string = "🦞 OpenClaw Wallpaper";
   private _pendingConnectionStatus: ConnectionStatus = "disconnected";
 
@@ -147,6 +148,10 @@ export class GameManager {
       this.agentManager.onCharacterClick(this._pendingClickHandler);
     }
 
+    if (this._pendingActionHandler) {
+      this.agentManager.onAction(this._pendingActionHandler);
+    }
+
     if (this.statusBar) {
       this.statusBar.setStatusText(this._pendingStatusText);
       this.statusBar.setConnectionStatus(this._pendingConnectionStatus);
@@ -203,6 +208,14 @@ export class GameManager {
   onPOIClick(handler: POIClickHandler | null): void {
     this._pendingPOIHandler = handler;
     this.poiInteraction?.onPOIClick(handler);
+  }
+
+  /**
+   * Register handler for InfoBubble action buttons (chat, abort, delete).
+   */
+  onAgentAction(handler: AgentActionHandler | null): void {
+    this._pendingActionHandler = handler;
+    this.agentManager?.onAction(handler);
   }
 
   /**

@@ -11,6 +11,7 @@
  *   - Token count
  *   - Last updated time
  *   - Debug: seat name
+ *   - Action buttons (Chat, Stop, Delete) with confirmation
  */
 
 import Phaser from "phaser";
@@ -23,6 +24,7 @@ const BUBBLE_PADDING = 10;
 const LINE_HEIGHT = 16;
 const FONT_SIZE = "10px";
 const TITLE_FONT_SIZE = "11px";
+const BUTTON_FONT_SIZE = "9px";
 const BUBBLE_BG = 0xfef9e7;
 const BUBBLE_BORDER = 0x222222;
 const BUBBLE_BORDER_WIDTH = 2;
@@ -31,6 +33,15 @@ const TAIL_SIZE = 8;
 const BUBBLE_OFFSET_X = 30; // right of character
 const BUBBLE_OFFSET_Y = -80; // above character
 const BUBBLE_DEPTH = 50;
+const BUTTON_HEIGHT = 18;
+const BUTTON_PADDING = 4;
+const BUTTON_GAP = 6;
+
+/** Action types that can be triggered from the bubble */
+export type BubbleAction = "chat" | "abort" | "delete";
+
+/** Callback type for bubble actions */
+export type BubbleActionHandler = (sessionKey: string, action: BubbleAction) => void;
 
 /** Format relative time */
 function formatRelativeTime(timestamp: number | undefined): string {
@@ -62,18 +73,32 @@ function getStatusDisplay(status: string | undefined): { emoji: string; label: s
   }
 }
 
+/** Check if a session status is considered "active" (running) */
+function isActiveStatus(status: string | undefined): boolean {
+  return status === "active" || status === "running" || status === "busy" || status === "working";
+}
+
 export class InfoBubble {
   private scene: Phaser.Scene;
   private container: Phaser.GameObjects.Container;
   private bg: Phaser.GameObjects.Graphics;
   private texts: Phaser.GameObjects.Text[] = [];
+  private buttons: Phaser.GameObjects.Text[] = [];
+  private buttonBgs: Phaser.GameObjects.Graphics[] = [];
   private _visible = false;
   private _dismissable = false;
   private _dismissTimer: ReturnType<typeof setTimeout> | null = null;
   private targetId: string | null = null;
 
+  /** Confirmation state: which button is awaiting 2nd click */
+  private _confirmingAction: BubbleAction | null = null;
+  private _confirmTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Callback when bubble is dismissed */
   onDismiss: (() => void) | null = null;
+
+  /** Callback when an action button is clicked */
+  onAction: BubbleActionHandler | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -111,10 +136,16 @@ export class InfoBubble {
     seatName?: string | null,
   ): void {
     this.targetId = session.key;
+    this._confirmingAction = null;
+    if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
 
     // Clear old content
     for (const t of this.texts) t.destroy();
     this.texts = [];
+    for (const b of this.buttons) b.destroy();
+    this.buttons = [];
+    for (const bg of this.buttonBgs) bg.destroy();
+    this.buttonBgs = [];
     this.bg.clear();
 
     // Build text lines
@@ -148,9 +179,22 @@ export class InfoBubble {
       lines.push({ text: `💺 ${seatName}`, color: "#b07030" });
     }
 
-    // Calculate bubble height
+    // Determine which buttons to show
+    const active = isActiveStatus(session.status);
+    const buttonDefs: Array<{ label: string; action: BubbleAction; color: string; hoverColor: string }> = [];
+
+    buttonDefs.push({ label: "💬 Chat", action: "chat", color: "#4a7c59", hoverColor: "#3a6c49" });
+
+    if (active) {
+      buttonDefs.push({ label: "⏹ Stop", action: "abort", color: "#c8860a", hoverColor: "#a87000" });
+    }
+
+    buttonDefs.push({ label: "🗑 Delete", action: "delete", color: "#888888", hoverColor: "#cc3333" });
+
+    // Calculate bubble height: text lines + separator + button row
     const textHeight = lines.length * LINE_HEIGHT + BUBBLE_PADDING * 2;
-    const bubbleHeight = textHeight + 4;
+    const buttonRowHeight = BUTTON_HEIGHT + BUTTON_PADDING * 2 + 4; // extra for separator
+    const bubbleHeight = textHeight + buttonRowHeight + 4;
 
     // Position bubble relative to character (upper-right)
     const bx = worldX + BUBBLE_OFFSET_X;
@@ -203,6 +247,117 @@ export class InfoBubble {
       ty += LINE_HEIGHT;
     }
 
+    // ── Action buttons ──────────────────────────────
+
+    // Separator before buttons
+    ty += 2;
+    this.bg.lineStyle(1, 0xd4c89a, 1);
+    this.bg.lineBetween(BUBBLE_PADDING, ty, BUBBLE_WIDTH - BUBBLE_PADDING, ty);
+    ty += BUTTON_PADDING + 2;
+
+    // Calculate button widths to fit evenly
+    const totalGap = BUTTON_GAP * (buttonDefs.length - 1);
+    const availableWidth = BUBBLE_WIDTH - BUBBLE_PADDING * 2 - totalGap;
+    const btnWidth = Math.floor(availableWidth / buttonDefs.length);
+    let bx2 = BUBBLE_PADDING;
+
+    for (const def of buttonDefs) {
+      // Button background (rounded rect via Graphics)
+      const btnBg = this.scene.add.graphics();
+      btnBg.fillStyle(0xe8e0c8, 1);
+      btnBg.lineStyle(1, 0xaaaaaa, 1);
+      btnBg.fillRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+      btnBg.strokeRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+      this.container.add(btnBg);
+      this.buttonBgs.push(btnBg);
+
+      // Button text (centered in the rect)
+      const btnText = this.scene.add.text(bx2 + btnWidth / 2, ty + BUTTON_HEIGHT / 2, def.label, {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: BUTTON_FONT_SIZE,
+        color: def.color,
+        align: "center",
+      }).setOrigin(0.5, 0.5);
+
+      // Make button interactive
+      btnText.setInteractive(
+        new Phaser.Geom.Rectangle(-(btnWidth / 2), -(BUTTON_HEIGHT / 2), btnWidth, BUTTON_HEIGHT),
+        Phaser.Geom.Rectangle.Contains,
+      );
+
+      btnText.on("pointerover", () => {
+        btnText.setColor(def.hoverColor);
+        btnBg.clear();
+        btnBg.fillStyle(0xd4c89a, 1);
+        btnBg.lineStyle(1, 0x888888, 1);
+        btnBg.fillRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+        btnBg.strokeRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+      });
+
+      btnText.on("pointerout", () => {
+        // Reset unless this button is in confirmation state
+        if (this._confirmingAction !== def.action) {
+          btnText.setColor(def.color);
+          btnBg.clear();
+          btnBg.fillStyle(0xe8e0c8, 1);
+          btnBg.lineStyle(1, 0xaaaaaa, 1);
+          btnBg.fillRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+          btnBg.strokeRoundedRect(bx2, ty, btnWidth, BUTTON_HEIGHT, 3);
+        }
+      });
+
+      // Capture bx2 and ty in closure for hover reset
+      const capturedBx = bx2;
+      const capturedTy = ty;
+
+      btnText.on("pointerdown", () => {
+        if (!this.targetId) return;
+
+        // Chat doesn't need confirmation
+        if (def.action === "chat") {
+          this.onAction?.(this.targetId, "chat");
+          return;
+        }
+
+        // Destructive actions need confirmation
+        if (this._confirmingAction === def.action) {
+          // Second click → execute
+          this.onAction?.(this.targetId, def.action);
+          this._confirmingAction = null;
+          if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
+          this.hide();
+          return;
+        }
+
+        // First click → enter confirmation state
+        this._confirmingAction = def.action;
+        btnText.setText("Sure?");
+        btnText.setColor("#cc3333");
+        btnBg.clear();
+        btnBg.fillStyle(0xffdddd, 1);
+        btnBg.lineStyle(1, 0xcc3333, 1);
+        btnBg.fillRoundedRect(capturedBx, capturedTy, btnWidth, BUTTON_HEIGHT, 3);
+        btnBg.strokeRoundedRect(capturedBx, capturedTy, btnWidth, BUTTON_HEIGHT, 3);
+
+        // Reset after 2s if not confirmed
+        if (this._confirmTimer) clearTimeout(this._confirmTimer);
+        this._confirmTimer = setTimeout(() => {
+          this._confirmingAction = null;
+          btnText.setText(def.label);
+          btnText.setColor(def.color);
+          btnBg.clear();
+          btnBg.fillStyle(0xe8e0c8, 1);
+          btnBg.lineStyle(1, 0xaaaaaa, 1);
+          btnBg.fillRoundedRect(capturedBx, capturedTy, btnWidth, BUTTON_HEIGHT, 3);
+          btnBg.strokeRoundedRect(capturedBx, capturedTy, btnWidth, BUTTON_HEIGHT, 3);
+        }, 2000);
+      });
+
+      this.container.add(btnText);
+      this.buttons.push(btnText);
+      bx2 += btnWidth + BUTTON_GAP;
+    }
+
     this._visible = true;
     this._dismissable = false;
     if (this._dismissTimer) clearTimeout(this._dismissTimer);
@@ -229,7 +384,9 @@ export class InfoBubble {
     if (!this._visible) return;
     this._visible = false;
     this._dismissable = false;
+    this._confirmingAction = null;
     if (this._dismissTimer) { clearTimeout(this._dismissTimer); this._dismissTimer = null; }
+    if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
     this.targetId = null;
 
     this.scene.tweens.add({
@@ -263,7 +420,11 @@ export class InfoBubble {
   }
 
   destroy(): void {
+    if (this._confirmTimer) clearTimeout(this._confirmTimer);
+    if (this._dismissTimer) clearTimeout(this._dismissTimer);
     for (const t of this.texts) t.destroy();
+    for (const b of this.buttons) b.destroy();
+    for (const bg of this.buttonBgs) bg.destroy();
     this.bg.destroy();
     this.container.destroy();
   }

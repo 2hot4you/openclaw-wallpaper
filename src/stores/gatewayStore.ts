@@ -173,6 +173,12 @@ interface GatewayState {
 
   /** Logout a channel (calls channels.logout RPC) */
   logoutChannel: (channel: string) => Promise<boolean>;
+
+  /** Delete a session by key */
+  deleteSession: (sessionKey: string) => Promise<boolean>;
+
+  /** Abort a running session by key */
+  abortSession: (sessionKey: string) => Promise<boolean>;
 }
 
 // ─── Store implementation ────────────────────────────────────
@@ -743,6 +749,36 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       return true;
     } catch (err) {
       console.warn("[gatewayStore] logoutChannel failed:", err);
+      return false;
+    }
+  },
+
+  // ── deleteSession ──────────────────────────────────
+
+  deleteSession: async (sessionKey: string): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("sessions.delete", { key: sessionKey }, 15_000);
+      await get().refreshSessions();
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] deleteSession failed:", err);
+      return false;
+    }
+  },
+
+  // ── abortSession ───────────────────────────────────
+
+  abortSession: async (sessionKey: string): Promise<boolean> => {
+    if (!client || client.status !== "connected") return false;
+
+    try {
+      await client.call("sessions.abort", { key: sessionKey }, 15_000);
+      await get().refreshSessions();
+      return true;
+    } catch (err) {
+      console.warn("[gatewayStore] abortSession failed:", err);
       return false;
     }
   },

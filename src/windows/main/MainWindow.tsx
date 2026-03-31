@@ -48,6 +48,8 @@ export const MainWindow: React.FC = () => {
   const sessions = useGatewayStore((s) => s.sessions);
   const agents = useGatewayStore((s) => s.agents);
   const refreshSessions = useGatewayStore((s) => s.refreshSessions);
+  const deleteSession = useGatewayStore((s) => s.deleteSession);
+  const abortSession = useGatewayStore((s) => s.abortSession);
 
   // App store
   const setOpenclawOnline = useAppStore((s) => s.setOpenclawOnline);
@@ -83,6 +85,30 @@ export const MainWindow: React.FC = () => {
     [setSettingsOpen],
   );
 
+  // Handle agent action from InfoBubble buttons (chat, abort, delete)
+  const handleAgentAction = useCallback(
+    (sessionKey: string, action: string) => {
+      switch (action) {
+        case "chat":
+          setSelectedCharacterId(sessionKey);
+          setChatSessionKey(sessionKey);
+          setChatPanelOpen(true);
+          break;
+        case "abort":
+          abortSession(sessionKey).catch((err) =>
+            console.warn("[Wallpaper] abortSession failed:", err),
+          );
+          break;
+        case "delete":
+          deleteSession(sessionKey).catch((err) =>
+            console.warn("[Wallpaper] deleteSession failed:", err),
+          );
+          break;
+      }
+    },
+    [setSelectedCharacterId, setChatSessionKey, setChatPanelOpen, abortSession, deleteSession],
+  );
+
   // ─── Phaser Initialization ──────────────────────────
 
   useEffect(() => {
@@ -107,6 +133,7 @@ export const MainWindow: React.FC = () => {
         // Register handlers
         gm.onCharacterClick(handleCharacterClick);
         gm.onPOIClick(handlePOIClick);
+        gm.onAgentAction(handleAgentAction);
 
         // Start in offline mode until Gateway connects
         gm.setOnlineMode(false);
@@ -131,7 +158,7 @@ export const MainWindow: React.FC = () => {
         gameManagerRef.current = null;
       }
     };
-  }, [handleCharacterClick, handlePOIClick]);
+  }, [handleCharacterClick, handlePOIClick, handleAgentAction]);
 
   // ─── Check Wallpaper Support ────────────────────────
 

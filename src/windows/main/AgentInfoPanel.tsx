@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useGatewayStore } from "../../stores/gatewayStore";
+import { resolveDisplayName } from "../../gateway/SessionMapper";
 
 /** Format relative time like "2 分钟前" */
 function formatRelativeTime(timestamp: number | undefined): string {
@@ -34,6 +35,11 @@ function getStatusDisplay(status: string | undefined): {
     default:
       return { emoji: "💤", label: "空闲", color: "#4a7c59" };
   }
+}
+
+/** Check if a session status is considered "active" (running) */
+function isActiveStatus(status: string | undefined): boolean {
+  return status === "active" || status === "running" || status === "busy" || status === "working";
 }
 
 // ── Module-level position storage ────────────────────────────
@@ -101,9 +107,17 @@ const TAIL_SIZE = 10;
 export const AgentInfoPanelWithPosition: React.FC = () => {
   const selectedId = useAppStore((s) => s.selectedCharacterId);
   const setSelectedId = useAppStore((s) => s.setSelectedCharacterId);
+  const setChatPanelOpen = useAppStore((s) => s.setChatPanelOpen);
+  const setChatSessionKey = useAppStore((s) => s.setChatSessionKey);
   const sessions = useGatewayStore((s) => s.sessions);
   const agents = useGatewayStore((s) => s.agents);
+  const deleteSession = useGatewayStore((s) => s.deleteSession);
+  const abortSession = useGatewayStore((s) => s.abortSession);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Confirmation state for destructive actions
+  const [confirmAction, setConfirmAction] = useState<"abort" | "delete" | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Force re-render on window resize so position recalculates
   const [, setResizeCount] = useState(0);
@@ -112,6 +126,12 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // Reset confirm state when selection changes
+  useEffect(() => {
+    setConfirmAction(null);
+    if (confirmTimerRef.current) { clearTimeout(confirmTimerRef.current); confirmTimerRef.current = null; }
+  }, [selectedId]);
 
   const session = selectedId
     ? sessions.find((s) => s.key === selectedId)
@@ -145,11 +165,48 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
     };
   }, [selectedId, handleClickOutside]);
 
+  // Action button handlers
+  const handleChat = useCallback(() => {
+    if (!selectedId) return;
+    setChatSessionKey(selectedId);
+    setChatPanelOpen(true);
+  }, [selectedId, setChatSessionKey, setChatPanelOpen]);
+
+  const handleAbort = useCallback(() => {
+    if (!selectedId) return;
+    if (confirmAction === "abort") {
+      // Second click — execute
+      abortSession(selectedId).catch((err) => console.warn("[AgentInfoPanel] abort failed:", err));
+      setConfirmAction(null);
+      if (confirmTimerRef.current) { clearTimeout(confirmTimerRef.current); confirmTimerRef.current = null; }
+      return;
+    }
+    // First click — enter confirm state
+    setConfirmAction("abort");
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setConfirmAction(null), 2000);
+  }, [selectedId, confirmAction, abortSession]);
+
+  const handleDelete = useCallback(() => {
+    if (!selectedId) return;
+    if (confirmAction === "delete") {
+      // Second click — execute
+      deleteSession(selectedId).catch((err) => console.warn("[AgentInfoPanel] delete failed:", err));
+      setConfirmAction(null);
+      setSelectedId(null);
+      if (confirmTimerRef.current) { clearTimeout(confirmTimerRef.current); confirmTimerRef.current = null; }
+      return;
+    }
+    // First click — enter confirm state
+    setConfirmAction("delete");
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setConfirmAction(null), 2000);
+  }, [selectedId, confirmAction, deleteSession, setSelectedId]);
+
   if (!selectedId || !session) return null;
 
   const statusDisplay = getStatusDisplay(session.status);
-  const displayName =
-    session.label ?? agent?.name ?? `Agent ${session.key.slice(0, 8)}`;
+  const displayName = resolveDisplayName(session, agent ?? undefined);
 
   // ── Position calculation (real-time from world coords) ──
   const screenPos = getScreenPosition();
@@ -308,6 +365,77 @@ export const AgentInfoPanelWithPosition: React.FC = () => {
             </div>
           ) : null;
         })()}
+
+        {/* Action buttons */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginTop: 8,
+            paddingTop: 6,
+            borderTop: "1px dashed #d4c89a",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Chat button */}
+          <button
+            onClick={handleChat}
+            style={{
+              flex: 1,
+              minWidth: 60,
+              padding: "4px 8px",
+              fontSize: 11,
+              fontFamily: '"Segoe UI", "Noto Sans SC", system-ui, sans-serif',
+              border: "1px solid #aaa",
+              borderRadius: 4,
+              background: "#e8e0c8",
+              color: "#4a7c59",
+              cursor: "pointer",
+            }}
+          >
+            💬 Chat
+          </button>
+
+          {/* Stop button — only for active sessions */}
+          {isActiveStatus(session.status) && (
+            <button
+              onClick={handleAbort}
+              style={{
+                flex: 1,
+                minWidth: 60,
+                padding: "4px 8px",
+                fontSize: 11,
+                fontFamily: '"Segoe UI", "Noto Sans SC", system-ui, sans-serif',
+                border: confirmAction === "abort" ? "1px solid #cc3333" : "1px solid #aaa",
+                borderRadius: 4,
+                background: confirmAction === "abort" ? "#ffdddd" : "#e8e0c8",
+                color: confirmAction === "abort" ? "#cc3333" : "#c8860a",
+                cursor: "pointer",
+              }}
+            >
+              {confirmAction === "abort" ? "Sure?" : "⏹ Stop"}
+            </button>
+          )}
+
+          {/* Delete button */}
+          <button
+            onClick={handleDelete}
+            style={{
+              flex: 1,
+              minWidth: 60,
+              padding: "4px 8px",
+              fontSize: 11,
+              fontFamily: '"Segoe UI", "Noto Sans SC", system-ui, sans-serif',
+              border: confirmAction === "delete" ? "1px solid #cc3333" : "1px solid #aaa",
+              borderRadius: 4,
+              background: confirmAction === "delete" ? "#ffdddd" : "#e8e0c8",
+              color: confirmAction === "delete" ? "#cc3333" : "#888",
+              cursor: "pointer",
+            }}
+          >
+            {confirmAction === "delete" ? "Sure?" : "🗑 Delete"}
+          </button>
+        </div>
 
         {/* Triangle tail (border) */}
         <div style={tailStyle} />

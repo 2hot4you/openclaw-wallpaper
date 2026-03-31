@@ -23,7 +23,8 @@ import { CHARACTER_SPRITES } from "../config/animations";
 import type { Direction } from "../config/animations";
 import type { OfficeScene } from "../scenes/OfficeScene";
 import type { SessionData, AgentData } from "../../gateway/types";
-import { InfoBubble } from "../ui/InfoBubble";
+import { InfoBubble, type BubbleAction } from "../ui/InfoBubble";
+import { resolveDisplayName } from "../../gateway/SessionMapper";
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ interface WaypointInfo {
 /** Route definition: ordered waypoint names from door to seat */
 // (reserved for future tilemap-based route definitions)
 
+/** Handler for bubble actions that need gateway calls */
+export type AgentActionHandler = (sessionKey: string, action: BubbleAction) => void;
+
 export class AgentManager {
   private scene: OfficeScene;
   private agents: Map<string, AgentSprite> = new Map();
@@ -58,6 +62,7 @@ export class AgentManager {
   private usedSeats: Set<number> = new Set();
   private nextSpriteIndex = 0;
   private _internalClickHandler: CharacterClickHandler | null = null;
+  private _actionHandler: AgentActionHandler | null = null;
 
   private infoBubble: InfoBubble;
   private lastSessions: SessionData[] = [];
@@ -82,6 +87,9 @@ export class AgentManager {
   constructor(scene: OfficeScene) {
     this.scene = scene;
     this.infoBubble = new InfoBubble(scene);
+    this.infoBubble.onAction = (sessionKey, action) => {
+      this._actionHandler?.(sessionKey, action);
+    };
     this.resolvePositions();
     this.buildRoutes();
   }
@@ -160,6 +168,11 @@ export class AgentManager {
     for (const agent of this.agents.values()) {
       agent.setClickHandler(internalHandler);
     }
+  }
+
+  /** Register a handler for InfoBubble action button clicks (chat/abort/delete) */
+  onAction(handler: AgentActionHandler | null): void {
+    this._actionHandler = handler;
   }
 
   getSeatIndex(sessionKey: string): string | null {
@@ -314,7 +327,11 @@ export class AgentManager {
   // ── Spawn ─────────────────────────────────────────
 
   private spawnAgent(session: SessionData): AgentSprite | null {
-    const displayName = session.label ?? session.agentId ?? session.key.split(":").pop() ?? "agent";
+    // Resolve display name using the smart resolver from SessionMapper
+    const matchedAgent = session.agentId
+      ? this.lastAgents.find((a) => a.agentId === session.agentId)
+      : undefined;
+    const displayName = resolveDisplayName(session, matchedAgent);
     // Spawn at door
     const spriteConfig = CHARACTER_SPRITES[this.nextSpriteIndex % CHARACTER_SPRITES.length];
     this.nextSpriteIndex++;
